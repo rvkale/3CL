@@ -3,27 +3,25 @@ package main
 import (
 	"flag"
 	"fmt"
-	"math"
+	//"math"
 	"math/rand"
 	"os"
 
 	"github.com/mumax/3cl/data"
-	"github.com/mumax/3cl/engine"
+	//"github.com/mumax/3cl/engine"
 	"github.com/mumax/3cl/opencl"
 	"github.com/mumax/3cl/opencl/cl"
 )
 
 var (
-	Flag_size  = flag.Int("length", 512, "length of data to test")
+	Flag_gpu = flag.Int("gpu", 0, "Specify GPU")
+	Flag_size  = flag.Int("length", 4, "length of data to test")
 	Flag_print = flag.Bool("print", false, "Print out result")
 	Flag_comp  = flag.Int("components", 1, "Number of components to test")
 	Flag_conj  = flag.Bool("conjugate", false, "Conjugate B in multiplication")
 )
 
-func main() {
-	flag.Parse()
-	dataSize := int(*Flag_size)
-	NComponents := int(*Flag_comp)
+func Complex_multi(plier []float32, plicant []float32,dataSize int, NComponents int) []float32 {
 	if dataSize < 4 {
 		fmt.Println("argument to -length must be 4 or greater!")
 		os.Exit(-1)
@@ -32,9 +30,123 @@ func main() {
 		fmt.Println("argument to -components must be 1, 2 or 3!")
 		os.Exit(-1)
 	}
-	tol := 5e-7
 
-	opencl.Init(*engine.Flag_gpu)
+	queue := opencl.ClCmdQueue
+	//	device, context, queue := opencl.ClDevice, opencl.ClCtx, opencl.ClCmdQueue
+	kernels := opencl.KernList
+
+	kernelObj := kernels["cmplx_mul"]
+	totalArgs, err := kernelObj.NumArgs()
+	if err != nil {
+		//fmt.Printf("Failed to get number of arguments of kernel: $+v \n", err)
+		fmt.Printf("\n Failed to get number of arguments of kernel: %+v ", err)
+
+	} else {
+		fmt.Printf("\n Number of arguments in kernel : %d", totalArgs)
+	}
+	for i := 0; i < totalArgs; i++ {
+		name, err := kernelObj.ArgName(i)
+		if err == cl.ErrUnsupported {
+			break
+		} else if err != nil {
+			fmt.Printf("GetKernelArgInfo for name failed: %+v \n", err)
+			break
+		} else {
+			fmt.Printf("Kernel arg %d: %s \n", i, name)
+		}
+	}
+
+	fmt.Printf("Begin first run of cmplx_mul kernel... \n")
+
+	// Creating inputs
+	fmt.Println("Generating input data...")
+	dataSize *= 2
+	size := [3]int{dataSize, 1, 1}
+	inputs0 := make([][]float32, NComponents)
+	for i := 0; i < NComponents; i++ {
+		inputs0[i] = make([]float32, size[0])
+		for j := 0; j < len(inputs0[i]); j++ {
+			inputs0[i][j] = plier[j]
+		}
+	}
+	inputs1 := make([][]float32, NComponents)
+	for i := 0; i < NComponents; i++ {
+		inputs1[i] = make([]float32, size[0])
+		for j := 0; j < len(inputs1[i]); j++ {
+			inputs1[i][j] = plicant[j]
+		}
+	}
+
+	fmt.Println("Done. Transferring input data from CPU to GPU...")
+	cpuArray0 := data.SliceFromArray(inputs0, size)
+	cpuArray1 := data.SliceFromArray(inputs1, size)
+	gpuBuffer0 := opencl.Buffer(NComponents, size)
+	gpuBuffer1 := opencl.Buffer(NComponents, size)
+	outBuffer := opencl.Buffer(NComponents, [3]int{dataSize, 1, 1})
+	outArray := data.NewSlice(NComponents, [3]int{dataSize, 1, 1})
+
+	data.Copy(gpuBuffer0, cpuArray0)
+	data.Copy(gpuBuffer1, cpuArray1)
+
+	fmt.Println("Waiting for data transfer to complete...")
+	queue.Finish()
+	fmt.Println("Input data transfer completed.")
+
+	fmt.Println("Executing kernel...")
+	if *Flag_conj {
+		opencl.ComplexArrayMul(outBuffer, gpuBuffer0, gpuBuffer1, 1, dataSize/2, 0)
+	} else {
+		opencl.ComplexArrayMul(outBuffer, gpuBuffer0, gpuBuffer1, 0, dataSize/2, 0)
+	}
+	fmt.Println("Waiting for kernel to finish execution...")
+	queue.Finish()
+	fmt.Println("Execution finished.")
+
+	fmt.Println("Retrieving results...")
+	data.Copy(outArray, outBuffer)
+	queue.Finish()
+	fmt.Println("Done.")
+	results := outArray.Host()
+	plication := make([]float32, dataSize)
+	for i := 0; i < NComponents; i++ {
+		for j := 0; j < len(inputs1[i]); j++ {
+			plication[j] = results[i][j]
+		}
+	}
+	fmt.Printf("Finished tests on cmplx_run\n")
+
+	fmt.Printf("freeing resources \n")
+	// opencl.Recycle(gpuBuffer0)
+	// opencl.Recycle(gpuBuffer1)
+	// opencl.Recycle(outBuffer)
+	// for _, krn := range kernels {
+	// 	krn.Release()
+	// }
+	return plication
+}
+
+func main() {
+	flag.Parse()
+	N := int(*Flag_size)
+	ReqComponents := int(*Flag_comp)
+	//tol := 5e-7
+	rand.Seed(54)
+	PartA := make([]float32, 2*N)
+	PartB := make([]float32, 2*N)
+	print_iter := 0
+	for print_iter < N {
+		PartA[2*print_iter] = rand.Float32()
+		PartA[2*print_iter+1] = rand.Float32()
+		PartB[2*print_iter] = rand.Float32()
+		PartB[2*print_iter+1] = rand.Float32()
+		print_iter++
+	}
+
+	opencl.Init(*Flag_gpu)
+
+
+
+	// opencl.Init(*engine.Flag_gpu)
 
 	platform := opencl.ClPlatform
 	fmt.Printf("Platform in use: \n")
@@ -46,7 +158,7 @@ func main() {
 	fmt.Printf("Device in use: \n")
 
 	d := opencl.ClDevice
-	fmt.Printf("Device %d (%s): %s \n", *engine.Flag_gpu, d.Type(), d.Name())
+	//fmt.Printf("Device %d (%s): %s \n", *engine.Flag_gpu, d.Type(), d.Name())
 	fmt.Printf("  Address Bits: %d \n", d.AddressBits())
 	fmt.Printf("  Available: %+v \n", d.Available())
 	fmt.Printf("  Compiler Available: %+v \n", d.CompilerAvailable())
@@ -93,119 +205,75 @@ func main() {
 	fmt.Printf("  Vendor: %s \n", d.Vendor())
 	fmt.Printf("  Version: %s \n", d.Version())
 
-	queue := opencl.ClCmdQueue
-	//	device, context, queue := opencl.ClDevice, opencl.ClCtx, opencl.ClCmdQueue
-	kernels := opencl.KernList
+	
 
-	kernelObj := kernels["cmplx_mul"]
-	totalArgs, err := kernelObj.NumArgs()
-	if err != nil {
-		fmt.Printf("Failed to get number of arguments of kernel: $+v \n", err)
-	} else {
-		fmt.Printf("Number of arguments in kernel : %d \n", totalArgs)
+	// for ii := 0; ii < NComponents; ii++ {
+	// 	correct := 0
+	// 	var tmpR0, tmpR1 float32
+	// 	for i := 0; i < dataSize/2; i++ {
+	// 		idx := 2*i
+	// 		AX, AY := inputs0[ii][idx], inputs0[ii][idx+1]
+	// 		BX, BY := inputs1[ii][idx], inputs1[ii][idx+1]
+	// 		if *Flag_conj {
+	// 			tmpR0 = AX*BX + AY*BY
+	// 			tmpR1 = AY*BX - AX*BY
+	// 		} else {
+	// 			tmpR0 = AX*BX - AY*BY
+	// 			tmpR1 = AX*BY + AY*BX
+	// 		}
+	// 		if (math.Abs(float64(results[ii][idx]-tmpR0)) < tol) && (math.Abs(float64(results[ii][idx+1]-tmpR1)) < tol) {
+	// 			correct++
+	// 		} else {
+	// 			if *Flag_print {
+	// 				fmt.Printf("Expecting [%d][%d]: (%f + i*%f)*(%f + i*%f) = (%f + i*(%f)) ; have: (%f + i*(%f)) \n", ii, idx, inputs0[ii][idx], inputs0[ii][idx+1], inputs1[ii][idx], inputs1[ii][idx+1], tmpR0, tmpR1, results[ii][idx], results[ii][idx+1])
+	// 			}
+	// 		}
+	// 	}
+
+	// 	if correct != dataSize/2 {
+	// 		fmt.Printf("%d/%d correct values \n", correct, dataSize/2)
+	// 		return
+	// 	}
+	// }
+
+	fmt.Printf("\n Calling FFT function for Part A: \n	")
+	PartAFFT := Complex_multi(PartA, PartB, N, ReqComponents)
+
+	fmt.Printf("\n Size of Part A FFT is %d \n", len(PartAFFT))
+	fmt.Printf("\n Printing array A \n")
+
+	print_iter = 0
+	for print_iter < N {
+		fmt.Printf("(%f, %f) ", PartA[2*print_iter], PartA[2*print_iter+1])
+		print_iter++
 	}
-	for i := 0; i < totalArgs; i++ {
-		name, err := kernelObj.ArgName(i)
-		if err == cl.ErrUnsupported {
-			break
-		} else if err != nil {
-			fmt.Printf("GetKernelArgInfo for name failed: %+v \n", err)
-			break
-		} else {
-			fmt.Printf("Kernel arg %d: %s \n", i, name)
-		}
-	}
-
-	fmt.Printf("Begin first run of cmplx_mul kernel... \n")
-
-	// Creating inputs
-	fmt.Println("Generating input data...")
-	dataSize *= 2
-	size := [3]int{dataSize, 1, 1}
-	inputs0 := make([][]float32, NComponents)
-	for i := 0; i < NComponents; i++ {
-		inputs0[i] = make([]float32, size[0])
-		for j := 0; j < len(inputs0[i]); j++ {
-			inputs0[i][j] = rand.Float32()
-		}
-	}
-	inputs1 := make([][]float32, NComponents)
-	for i := 0; i < NComponents; i++ {
-		inputs1[i] = make([]float32, size[0])
-		for j := 0; j < len(inputs1[i]); j++ {
-			inputs1[i][j] = rand.Float32()
-		}
-	}
-
-	fmt.Println("Done. Transferring input data from CPU to GPU...")
-	cpuArray0 := data.SliceFromArray(inputs0, size)
-	cpuArray1 := data.SliceFromArray(inputs1, size)
-	gpuBuffer0 := opencl.Buffer(NComponents, size)
-	gpuBuffer1 := opencl.Buffer(NComponents, size)
-	outBuffer := opencl.Buffer(NComponents, [3]int{dataSize, 1, 1})
-	outArray := data.NewSlice(NComponents, [3]int{dataSize, 1, 1})
-
-	data.Copy(gpuBuffer0, cpuArray0)
-	data.Copy(gpuBuffer1, cpuArray1)
-
-	fmt.Println("Waiting for data transfer to complete...")
-	queue.Finish()
-	fmt.Println("Input data transfer completed.")
-
-	fmt.Println("Executing kernel...")
-	if *Flag_conj {
-		opencl.ComplexArrayMul(outBuffer, gpuBuffer0, gpuBuffer1, 1, dataSize/2, 0)
-	} else {
-		opencl.ComplexArrayMul(outBuffer, gpuBuffer0, gpuBuffer1, 0, dataSize/2, 0)
-	}
-	fmt.Println("Waiting for kernel to finish execution...")
-	queue.Finish()
-	fmt.Println("Execution finished.")
-
-	fmt.Println("Retrieving results...")
-	data.Copy(outArray, outBuffer)
-	queue.Finish()
-	fmt.Println("Done.")
-	results := outArray.Host()
-
-	for ii := 0; ii < NComponents; ii++ {
-		correct := 0
-		var tmpR0, tmpR1 float32
-		for i := 0; i < dataSize/2; i++ {
-			idx := 2*i
-			AX, AY := inputs0[ii][idx], inputs0[ii][idx+1]
-			BX, BY := inputs1[ii][idx], inputs1[ii][idx+1]
-			if *Flag_conj {
-				tmpR0 = AX*BX + AY*BY
-				tmpR1 = AY*BX - AX*BY
-			} else {
-				tmpR0 = AX*BX - AY*BY
-				tmpR1 = AX*BY + AY*BX
-			}
-			if (math.Abs(float64(results[ii][idx]-tmpR0)) < tol) && (math.Abs(float64(results[ii][idx+1]-tmpR1)) < tol) {
-				correct++
-			} else {
-				if *Flag_print {
-					fmt.Printf("Expecting [%d][%d]: (%f + i*%f)*(%f + i*%f) = (%f + i*(%f)) ; have: (%f + i*(%f)) \n", ii, idx, inputs0[ii][idx], inputs0[ii][idx+1], inputs1[ii][idx], inputs1[ii][idx+1], tmpR0, tmpR1, results[ii][idx], results[ii][idx+1])
-				}
-			}
-		}
-
-		if correct != dataSize/2 {
-			fmt.Printf("%d/%d correct values \n", correct, dataSize/2)
-			return
-		}
+	fmt.Printf("\n Printing Array B \n")
+	print_iter = 0
+	for print_iter < N {
+		fmt.Printf("(%f, %f) ", PartB[2*print_iter], PartB[2*print_iter+1])
+		print_iter++
 	}
 
-	fmt.Printf("Finished tests on cmplx_run\n")
-
-	fmt.Printf("freeing resources \n")
-	opencl.Recycle(gpuBuffer0)
-	opencl.Recycle(gpuBuffer1)
-	opencl.Recycle(outBuffer)
-	for _, krn := range kernels {
-		krn.Release()
+	fmt.Printf("\n Printing Result \n")
+	print_iter = 0
+	for print_iter < N {
+		fmt.Printf("(%f, %f) ", PartAFFT[2*print_iter], PartAFFT[2*print_iter+1])
+		print_iter++
 	}
+	fmt.Printf("\n")
+
+
+	fmt.Printf("\n Calling FFT function for Part B:")
+
+	PartBFFT := Complex_multi(PartA, PartB, N, ReqComponents)
+
+	fmt.Printf("\n Size of Part B FFT is %d \n", len(PartBFFT))
+	print_iter = 0
+	for print_iter < N {
+		fmt.Printf("(%f, %f) ", PartBFFT[2*print_iter], PartBFFT[2*print_iter+1])
+		print_iter++
+	}
+	fmt.Printf("\n")
 
 	opencl.ReleaseAndClean()
 }
