@@ -43,7 +43,7 @@ Consider downloading a pre-compiled binary. If you want to compile nevertheless:
     - `go get github.com/mumax/3/cmd/mumax3`
   * if you don't have git:
     - seriously, no git?
-    - get the source from https://github.com/mumax/3cl/releases
+    - get the source by downloading the zip file
     - unzip the source into $GOPATH/src/github.com/mumax/3cl
     - `cd $GOPATH/src/github.com/mumax/3cl/cmd/mumax3`
     - `go install`
