@@ -20,7 +20,7 @@ import (
 // json filenames are hardcoded and are required to be in the same directory currently
 var (
 	Flag_gpu = flag.Int("gpu", 0, "Specify GPU")
-	Flag_size  = flag.Int("length", 67, "length of data to test")
+	Flag_size  = flag.Int("length", 359, "length of data to test")
 	Flag_print = flag.Bool("print", false, "Print out result")
 	Flag_comp  = flag.Int("components", 1, "Number of components to test")
 	Flag_conj  = flag.Bool("conjugate", false, "Conjugate B in multiplication")
@@ -40,9 +40,9 @@ func findLength(tempLength int, fileName string) int {
 
 	j = m[strLength]
 
-	fmt.Printf("The value of the required length is: %v", j)
+	// fmt.Printf("The value of the required length is: %v", j)
 
-	m = nil	
+	m = nil
 	
 	return j
 
@@ -421,12 +421,9 @@ func main() {
 	var Desci int //Descision variable
 	N := int(*Flag_size)
 	ReqComponents := int(*Flag_comp)
+	opencl.Init(*Flag_gpu) 
 	rand.Seed(178)
-	// fmt.Printf("Enter the length as 67 for now: ")
-	// _, err := fmt.Scanf("%d", &N)
-	// if err!= nil {panic("Serious Error!")}
 	X := make([]float32, 2*N)
-
 
 	/* Print input array */
 
@@ -442,9 +439,32 @@ func main() {
 		print_iter++
 	}
 
+	Check1,Finder := blusteinCase(N)
+
+	fmt.Printf("Value of required length is %d", Check1)
+
+	if Check1 == 0 && Finder == 1 {
+		fmt.Printf("\n Bluesteins Implementation not necessary. Finding FFT directly...\n")
+		FinalResults := FindClfft(X,N,"frw")
+		print_iter = 0
+		for print_iter < N {
+			fmt.Printf("(%f, %f) ", FinalResults[2*print_iter], FinalResults[2*print_iter+1])
+			print_iter++
+		}
+		fmt.Printf("\n")
+		panic("\n *******Terminating Program***********")		 
+
+	}
+	
+	
+	// fmt.Printf("Enter the length as 67 for now: ")
+	// _, err := fmt.Scanf("%d", &N)
+	// if err!= nil {panic("Serious Error!")}
+
+
 	var BluN int
 
-	BluN = 2*N //Minimum condition for Blustein's M>=2*N
+	BluN = 2*(N+1) //Minimum condition for Blustein's M>=2*N
 
 	
 	//Check if new length is valid and if Blusteins Algorithm is required
@@ -460,17 +480,15 @@ func main() {
 		panic("\n Something is weird! Terminating... Check immidiately...")
 	case 1:
 		if FinalN == 0 {
-			fmt.Printf("\n Bluestein is not required. Executing clFFT with length %v...", BluN)
+			// fmt.Printf("\n Bluestein is not required. Executing clFFT with length %v...", BluN)
 			FinalN = BluN
-		} else {
-			fmt.Printf("\n Bluestein is required. The value of bluestein length is %v ", FinalN)
 		}
+		fmt.Printf("\n Adjusting length and finding FFT using Blusteins Algorithm with Legnth = %d...\n", FinalN)
 	}
 
 	
 	/* Prepare OpenCL memory objects and place data inside them for . */
-	flag.Parse()
-	opencl.Init(*Flag_gpu) //Initialize GPU with a flag to pick the desired gpu
+	//Initialize GPU with a flag to pick the desired gpu
 	//opencl.Init(*engine.Flag_gpu)
 
 
