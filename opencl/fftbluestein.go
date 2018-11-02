@@ -2,6 +2,7 @@ package opencl
 
 import (
 	"fmt"
+
 	"github.com/mumax/3cl/data"
 	"github.com/mumax/3cl/opencl/cl"
 	"github.com/mumax/3cl/util"
@@ -96,5 +97,33 @@ func ComplexArrayMul(dst, a, b *data.Slice, conjB, cnt, offset int) {
 
 	if err := cl.WaitForEvents(tmpEventList1); err != nil {
 		fmt.Printf("WaitForEvents failed in complexarraymul: %+v \n", err)
+	}
+}
+
+//Trans_pose Transpose Array
+func Trans_pose(dst, src *data.Slice, src_rows, src_col int) {
+	util.Argument(src.NComp() == dst.NComp())
+	util.Argument(src_rows >= 0)
+	util.Argument(src_col >= 0)
+	util.Argument(dst.Len() >= src_rows*src_col)
+	//cfg := make1DConf(int(src_rows * src_col / 2))
+	var tmpEventList, tmpEventList1 []*cl.Event
+	for ii := 0; ii < src.NComp(); ii++ {
+		tmpEvent := src.GetEvent(ii)
+		if tmpEvent != nil {
+			tmpEventList = append(tmpEventList, tmpEvent)
+		}
+	}
+	for ii := 0; ii < src.NComp(); ii++ {
+		fmt.Printf("\n Calling the actual function now \n")
+		//event := k_trans_pose_async(dst.DevPtr(ii), src.DevPtr(ii), 0, src_col, src_rows, reduceintcfg, tmpEventList)
+		event := k_trans_pose_async(dst.DevPtr(ii), src.DevPtr(ii), 0, src_col, src_rows, reducecfg, tmpEventList)
+		dst.SetEvent(ii, event)
+		src.SetEvent(ii, event)
+		tmpEventList1 = append(tmpEventList1, event)
+	}
+
+	if err := cl.WaitForEvents(tmpEventList1); err != nil {
+		fmt.Printf("WaitForEvents failed in transpose: %+v \n", err)
 	}
 }
