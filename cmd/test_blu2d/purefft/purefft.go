@@ -1,6 +1,5 @@
 package purefft
 
-
 import (
 	"fmt"
 	//"math"
@@ -15,17 +14,23 @@ import (
 	//"github.com/mumax/3cl/data"
 	"github.com/mumax/3cl/opencl"
 	"github.com/mumax/3cl/opencl/cl"
-
 )
 
-// Function to find 1D ClFFT of the given []float32
+//FindClfft Function to find 1D ClFFT of the given []float32..
+func FindClfft(InputData []float32, N int, Direction string) []float32 {
 
-func FindClfft(InputData []float32,N int,Direction string) []float32 {
+	var IsReal, IsForw, IsDoublePrecision bool
+
+	if Direction == "inv" {
+		IsForw = false
+	} else {
+		IsForw = true
+	}
+
 	context := opencl.ClCtx
 	queue := opencl.ClCmdQueue
 
 	fmt.Printf("\n Performing fft on an one dimensional array of size N = %d \n", N)
-
 
 	/* Prepare OpenCL memory objects and place data inside them. */
 	bufX, errC := context.CreateEmptyBuffer(cl.MemWriteOnly, N*2*int(unsafe.Sizeof(InputData[0])))
@@ -47,13 +52,34 @@ func FindClfft(InputData []float32,N int,Direction string) []float32 {
 	if errF != nil {
 		fmt.Printf("unable to create new fft plan \n")
 	}
-	errF = fftPlanHandle.SetSinglePrecision()
-	if errF != nil {
-		fmt.Printf("unable to set fft precision \n")
+
+	if IsDoublePrecision == false {
+		errF = fftPlanHandle.SetSinglePrecision()
+		if errF != nil {
+			fmt.Printf("unable to set fft precision \n")
+		}
 	}
+
 	ArrLayout := cl.NewArrayLayout()
-	ArrLayout.SetInputLayout(cl.CLFFTLayoutComplexInterleaved)
-	ArrLayout.SetOutputLayout(cl.CLFFTLayoutComplexInterleaved)
+	if IsForw == true {
+		if IsReal == false {
+			ArrLayout.SetInputLayout(cl.CLFFTLayoutComplexInterleaved)
+			ArrLayout.SetOutputLayout(cl.CLFFTLayoutComplexInterleaved)
+		} else {
+			ArrLayout.SetInputLayout(cl.CLFFTLayoutReal)
+			ArrLayout.SetOutputLayout(cl.CLFFTLayoutHermitianInterleaved)
+		}
+	} else {
+		if IsReal == false {
+			ArrLayout.SetInputLayout(cl.CLFFTLayoutComplexInterleaved)
+			ArrLayout.SetOutputLayout(cl.CLFFTLayoutComplexInterleaved)
+		} else {
+			ArrLayout.SetInputLayout(cl.CLFFTLayoutHermitianInterleaved)
+			ArrLayout.SetOutputLayout(cl.CLFFTLayoutReal)
+		}
+	}
+	// ArrLayout.SetInputLayout(cl.CLFFTLayoutComplexInterleaved)
+	// ArrLayout.SetOutputLayout(cl.CLFFTLayoutComplexInterleaved)
 	errF = fftPlanHandle.SetResultOutOfPlace()
 	if errF != nil {
 		fmt.Printf("unable to set fft result location \n")
@@ -100,14 +126,12 @@ func FindClfft(InputData []float32,N int,Direction string) []float32 {
 	return InputData
 }
 
-
-//Function to create 2D FFT array
+//Find2DClfft Function to create 2D FFT array
 func Find2DClfft(InputData []float32, N0 int, N1 int, Direction string) []float32 {
 	context := opencl.ClCtx
 	queue := opencl.ClCmdQueue
 
 	fmt.Printf("\n Performing fft on an one dimensional array of size N = %d \n", N0)
-
 
 	/* Prepare OpenCL memory objects and place data inside them. */
 	bufX, errC := context.CreateEmptyBuffer(cl.MemWriteOnly, N0*N1*2*int(unsafe.Sizeof(InputData[0])))
@@ -129,6 +153,7 @@ func Find2DClfft(InputData []float32, N0 int, N1 int, Direction string) []float3
 	if errF != nil {
 		fmt.Printf("unable to create new fft plan \n")
 	}
+
 	errF = fftPlanHandle.SetSinglePrecision()
 	if errF != nil {
 		fmt.Printf("unable to set fft precision \n")

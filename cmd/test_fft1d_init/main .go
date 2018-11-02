@@ -25,7 +25,7 @@ func FindClfft(X []float32,N int, Direction string) []float32 {
 		fmt.Printf("(%f, %f) ", X[2*print_iter], X[2*print_iter + 1])
 		print_iter++
 	}
-	fmt.Printf("\n\nfft result: \n")
+	fmt.Printf("\n\n fft result: \n")
 
 	/* Prepare OpenCL memory objects and place data inside them. */
 	bufX, errC := context.CreateEmptyBuffer(cl.MemWriteOnly, N*2*int(unsafe.Sizeof(X[0])))

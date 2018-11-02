@@ -28,34 +28,12 @@ var (
 	Flag_comp  = flag.Int("components", 1, "Number of components to test")
 	//Flag_conj  = flag.Bool("conjugate", false, "Conjugate B in multiplication")
 )
-type InputDataForm struct {
-	IsReal bool
-	IsForward bool
-	IsDoublePrecision bool
-	NumofRows int
-	NumofCols int
-	NumofDepth int
-}
-
-func MasterCompute(TempInput [][]float32, Exm1 InputDataForm) {
-	if NumofDepth == 1 {
-		if (IsReal == true && NumofCols == 1) || (IsReal == false && NumofCols == 2) {
-			if NumofRows == 1 {
-				fmt.Printf("\n Input is a single element \n")
-			} else if FftSolution := fftwrapper.ForwFft1D(TempInput,int(*Flag_size))
-		} else FftSolution := fftwrapper.Forwfft2D(TempInput, NumofRows, NumofCols, int(*Flag_size))
-	}
-
-}
-
-
 
 func main() {
 	
 	flag.Parse()
 	var Desci int //Descision variable
-	N0 := int(*Flag_size)
-	N1 := int(*Flag_size)
+	N := int(*Flag_size)
 	ReqComponents := int(*Flag_comp)
 	opencl.Init(*Flag_gpu) 
 	rand.Seed(178)
@@ -64,7 +42,7 @@ func main() {
 	/* Print input array */
 
 	print_iter := 0
-	for print_iter < N0 {
+	for print_iter < N {
 		x := rand.Float32()
 		y := rand.Float32()
 		// x := float32(1)
@@ -74,8 +52,6 @@ func main() {
 		fmt.Printf("(%f, %f) ", x, y)
 		print_iter++
 	}
-
-	
 
 	
 	
@@ -149,8 +125,151 @@ func main() {
 
 	/* Zero Padding for adjusting the length if necessary*/
 	
+
+	fmt.Printf("\n Checking FFT......\n")
+	print_iter = 0
+	for print_iter < N {
+		fmt.Printf("(%f, %f) ", FinalDftX[2*print_iter], FinalDftX[2*print_iter+1])
+		print_iter++
+	}
+	fmt.Printf("\n")
+
+	
+
+
+
+
+	/********************************************************************Inverse DFT**********************************************************************/
+
+	/* Zero Padding for adjusting the length if necessary*/
+	ZeroInvPadX := AddZero(FinalDftX, FinalN) //Padding zeros to extend lenth	
+
+	fmt.Printf("\n Finished adding zeros \n")
+
+	/********************************************************Inverse FFT Part A begins***************************************************/
+
+	InvFftA := InvProcessA(ZeroInvPadX, N) //Part A for Inverse FFT
+		
+	fmt.Printf("\n Calculating FFT of Inverse part A... \n")
+
+	PartAInvFFT := FindClfft(InvFftA, FinalN, "frw")
+
+	fmt.Printf("\n Finished calculating FFT of Inverse part A...\n")
+	
+
+	/***+++++++++++++++++++++++++++++++++++++++++++++++++++++++Inverse FFT Part A ends++++++++++++++++++++++++++++++++++++++++++++++*****/
+
+	/**********************************************************Inverse FFT Part B begins*************************************************/
+
+	InvFftB := InvProcessB(FinalN, N)
+
+	fmt.Printf("\n Calculating FFT of Inverse part B...\n")
+
+	PartBInvFFT := FindClfft(InvFftB, FinalN, "frw")
+
+	fmt.Printf("\n Finished calculating FFT of Inverse part B...\n ")
+
+	/*++++++++++++++++++++++++++++++++++++++++++++++++++++Inverse FFT Part B ends here++++++++++++++++++++++++++++++++++++++++++++++++***/
+
+	/*********************Bitwise multiplication for Inverse FFT Part a and Part b begins here****************************************/
+	fmt.Printf("\n Calculating multiplication of Inverse  A*B...\n")
+
+	DftInvaxb := Complex_multi(PartAInvFFT, PartBInvFFT, FinalN, ReqComponents)
+
+	fmt.Printf("\n Finished calculating multiplication of Inverse  A*B...\n")
+	/***++++++++++++++++++Bitwise multiplication for Inverse FFT Part a and Part b ends here++++++++++++++++++++++++++++++++++++++++***/
+	
+	
+	/***********************************Inverse DFT by taking iverse of A* B begins here*************************************************************/
+	fmt.Printf("\n Calculating Inverse FFT of inverse A*B...\n")
+
+	InvOfaxb := FindClfft(DftInvaxb, FinalN, "inv")
+
+	fmt.Printf("\n Finished calculating Inverse FFT of inverse A*B...\n ")
+	/*++++++++++++++++++++++++++++++++++Inverse DFT by taking iverse of A* B ends here++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++***/
+
+	/*********************Bitwise multiplication for Inverse FFT with Twiddle Factor begins here****************************************/
+	
+	InvTwiddle := InvFftTwid(FinalN, N)
+
+	fmt.Printf("\n Calculating multiplication with Inv Twiddle......\n")
+
+	InvFFTfinal := Complex_multi(InvTwiddle,InvOfaxb, FinalN, ReqComponents)
+
+	fmt.Printf("\n Finished calculating multiplication with Inv Twiddle......\n ")
+
+
+	
+	
+	/***++++++++++++++++++Bitwise multiplication for Inverse FFT with Twiddle Factor ends here++++++++++++++++++++++++++++++++++++++++***/
+
+	IntermVarx := RemoveZero(InvFFTfinal, N) //Removing zeros for final result
+
+	FinalVarx := make([]float32, len(IntermVarx))
+
+	fmt.Printf("\n Size of Part B FFT is %d \n", len(FinalVarx))
+	print_iter = 0
+	for print_iter < N {
+		FinalVarx[2*print_iter] = IntermVarx[2*print_iter]/float32(N)
+		FinalVarx[2*print_iter+1] = IntermVarx[2*print_iter+1]/float32(N)
+		fmt.Printf("(%f, %f) ", FinalVarx[2*print_iter], FinalVarx[2*print_iter+1])
+		print_iter++
+	}
+	fmt.Printf("\n")
+
 	opencl.ReleaseAndClean()
 
+
+	// //Testing results
+	// testArr0 := make([]float64, N)
+	// // testArr1 := make([]float64, N)
+	// //for ii := 0; ii < size[0]; ii++ {
+	// for ii := 0; ii < N; ii++ {
+	// 	testArr0[ii] = float64(FinalVarx[ii] - X[ii])
+		// testArr1[ii] = float64(FinalVarx[ii])
+	// for ii := N / 2; ii > 0; ii /= 2 {
+	// 	for jj := 0; jj < ii; jj++ {
+	// 		aVal := testArr0[jj]
+	// 		bVal := testArr0[jj+ii]
+	// 		tsum := aVal + bVal
+	// 		aEr := tsum - bVal
+	// 		bEr := tsum - aVal
+	// 		aErr := aEr - aVal
+	// 		bErr := bEr - bVal
+	// 		//testArr1[jj] += aErr + bErr
+	// 		testArr0[jj] = tsum
+	// 	}
+	// }
+	//golden := testArr0[0] - testArr1[0]
+
+	//tol := float64(golden * 1e-5)
+	//engine.Expect("Result", float64(results), float64(golden), tol)
+	// if float64(results) == golden {
+	// 	fmt.Println("Results match!")
+	// } else {
+	// 	fmt.Println("Results do not match! golden: ", golden, "; result: ", results)
+	// }
+
+	// fmt.Printf("Finished tests on sum\n")
+
+	// fmt.Printf("freeing resources \n")
+	// //	gpuBuffer.Free()
+	// opencl.Recycle(gpuBuffer)
+
+	// opencl.ReleaseAndClean()
+	
+	// //var k = []complex128 {complex(4,1), complex(10,2), complex(4,1), complex(10,2), complex(0,0)}
+	// //var z = []complex128
+	// var k = []float32 {4,1,10,2,4,1,10,2,0,0}
+	// var z []float32
+
+
+	// //z = AddZero( k, 5);
+	// z = PreProcessB(len(k),4)
+	// fmt.Printf( "\n Value is: %f + %fi", z[2],z[3]);
+	// fmt.Printf( "\n Value is: %f + %fi ", z[6],z[7]);
+	// fmt.Printf( "\n Value is: %f + %fi ", z[8],z[9]);
+	// fmt.Printf("\n Length of array %d", len(k))
 
 	
 }

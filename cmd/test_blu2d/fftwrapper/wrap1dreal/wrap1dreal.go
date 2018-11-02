@@ -1,4 +1,4 @@
-package fftwrapper
+package wrap1dreal
 
 import (
 	"encoding/json"
@@ -12,7 +12,6 @@ import (
 
 	//"math/rand"
 
-	"github.com/mumax/3cl/cmd/test_blu2d/purefft"
 	"github.com/mumax/3cl/data"
 	"github.com/mumax/3cl/opencl"
 	"github.com/mumax/3cl/opencl/cl"
@@ -25,7 +24,6 @@ func findLength(tempLength int, fileName string) int {
 	var j int
 	m := make(map[string]int)
 	strLength := strconv.Itoa(tempLength)
-	fmt.Printf("\n Check \n")
 
 	jsonFile, _ := os.Open(fileName)
 	defer jsonFile.Close()
@@ -289,7 +287,7 @@ func ForwFft1D(X []float32, ReqComponents int) []float32 {
 
 	if Check1 == 0 && Finder == 1 {
 		fmt.Printf("\n Bluesteins Implementation not necessary. Finding FFT directly...\n")
-		FinalResults := purefft.FindClfft(X, len(X), "frw")
+		FinalResults := FindClfft(X, len(X), "frw")
 		return FinalResults
 
 	}
@@ -326,7 +324,7 @@ func ForwFft1D(X []float32, ReqComponents int) []float32 {
 
 	fmt.Printf("\n Calculating FFT of part A... \n")
 
-	PartAForwFFT := purefft.FindClfft(ForwFftA, FinalN, "frw")
+	PartAForwFFT := FindClfft(ForwFftA, FinalN, "frw")
 
 	fmt.Printf("\n Finished calculating FFT of part A...\n")
 
@@ -338,7 +336,7 @@ func ForwFft1D(X []float32, ReqComponents int) []float32 {
 
 	fmt.Printf("\n Calculating FFT of part B...\n")
 
-	PartBForwFFT := purefft.FindClfft(ForwFftB, FinalN, "frw")
+	PartBForwFFT := FindClfft(ForwFftB, FinalN, "frw")
 
 	fmt.Printf("\n Finished calculating FFT of part B...\n ")
 	/*++++++++++++++++++++++++++++++++++++++++++++++++++++Forward FFT Part B ends here++++++++++++++++++++++++++++++++++++++++++++++++***/
@@ -358,7 +356,7 @@ func ForwFft1D(X []float32, ReqComponents int) []float32 {
 	/***********************************Forward DFT by taking iverse of A* B begins here*************************************************************/
 	fmt.Printf("\n Calculating Inverse FFT of  A*B...\n")
 
-	InvAxB := purefft.FindClfft(DftMulAB, FinalN, "inv")
+	InvAxB := FindClfft(DftMulAB, FinalN, "inv")
 
 	fmt.Printf("\n Finished calculating Inverse FFT of A*B...\n ")
 	/*++++++++++++++++++++++++++++++++++Forward DFT by taking iverse of A* B ends here++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++***/
