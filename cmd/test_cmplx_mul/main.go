@@ -133,14 +133,18 @@ func main() {
 	rand.Seed(54)
 	PartA := make([]float32, 2*N)
 	PartB := make([]float32, 2*N)
-	print_iter := 0
-	for print_iter < N {
-		PartA[2*print_iter] = rand.Float32()
-		PartA[2*print_iter+1] = rand.Float32()
-		PartB[2*print_iter] = rand.Float32()
-		PartB[2*print_iter+1] = rand.Float32()
-		print_iter++
-	}
+	// print_iter := 0
+	// // for print_iter < N {
+	// // 	PartA[2*print_iter] = rand.Float32()
+	// // 	PartA[2*print_iter+1] = rand.Float32()
+	// // 	PartB[2*print_iter] = rand.Float32()
+	// // 	PartB[2*print_iter+1] = rand.Float32()
+	// // 	print_iter++
+	// // }
+
+	PartA = []float32{1,0,0,-1,1,0,0,-1}
+	PartB = []float32{2,-2,0,0,2,2,0,0}
+
 
 	opencl.Init(*Flag_gpu)
 
@@ -242,7 +246,7 @@ func main() {
 	fmt.Printf("\n Size of Part A FFT is %d \n", len(PartAFFT))
 	fmt.Printf("\n Printing array A \n")
 
-	print_iter = 0
+	print_iter := 0
 	for print_iter < N {
 		fmt.Printf("(%f, %f) ", PartA[2*print_iter], PartA[2*print_iter+1])
 		print_iter++

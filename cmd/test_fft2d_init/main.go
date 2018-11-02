@@ -6,9 +6,18 @@ import (
 	"github.com/mumax/3cl/opencl/cl"
 	"math/rand"
 	"unsafe"
+	"flag"
 )
 
+var (
+	Flag_gpu = flag.Int("gpu", 0, "Specify GPU")
+)
+
+
+
+
 func main() {
+	
 	var data [1024]float32
 	for i := 0; i < len(data); i++ {
 		data[i] = rand.Float32()
@@ -17,7 +26,9 @@ func main() {
 	N0, N1 := 8, 8
 	X := make([]float32, 2*N0*N1)
 
-	opencl.Init(0)
+	flag.Parse()
+
+	opencl.Init(*Flag_gpu)
 	platforms := opencl.ClPlatforms
 	fmt.Printf("Discovered platforms: \n")
 	for i, p := range platforms {

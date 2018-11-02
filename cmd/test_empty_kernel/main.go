@@ -1,19 +1,22 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"github.com/mumax/3cl/opencl"
 	"github.com/mumax/3cl/opencl/cl"
+	"github.com/mumax/3cl/engine"
 	"math/rand"
 )
 
 func main() {
+	flag.Parse()
 	var data [1024]float32
 	for i := 0; i < len(data); i++ {
 		data[i] = rand.Float32()
 	}
 
-	opencl.Init(0)
+	opencl.Init(*engine.Flag_gpu)
 	platforms := opencl.ClPlatforms
 	fmt.Printf("Discovered platforms: \n")
 	for i, p := range platforms {
@@ -88,7 +91,7 @@ func main() {
 	kernels := opencl.KernList
 
 	// Name of non-existing kernel
-	kernelname := "unknown"
+	kernelname := "trans_pose"
 
 	_, ok := kernels[kernelname]
 

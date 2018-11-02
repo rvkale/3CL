@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"flag"
 	//"math/rand"
-	"unsafe"
+	//"unsafe"
 	"github.com/mumax/3cl/data"
 	"github.com/mumax/3cl/opencl"
 	"github.com/mumax/3cl/opencl/cl"
@@ -181,7 +181,6 @@ func InvFftTwid(newLength int, origLength int) []float32 {
 	return InvTwid
 }
 
-
 /**********Function for Complex Multiplication******************/
 func Complex_multi(plier []float32, plicant []float32,dataSize int, NComponents int) []float32 {
 	if dataSize < 4 {
@@ -289,7 +288,7 @@ func ForwFft1D(X []float32, ReqComponents int) []float32 {
 
 	if Check1 == 0 && Finder == 1 {
 		fmt.Printf("\n Bluesteins Implementation not necessary. Finding FFT directly...\n")
-		FinalResults := FindClfft(X,len(X),"frw")
+		FinalResults := purefft.FindClfft(X,len(X),"frw")
 		return FinalResults
 
 	}
@@ -329,7 +328,7 @@ func ForwFft1D(X []float32, ReqComponents int) []float32 {
 
 	fmt.Printf("\n Calculating FFT of part A... \n")
 
-	PartAForwFFT := FindClfft(ForwFftA, FinalN, "frw")
+	PartAForwFFT := purefft.FindClfft(ForwFftA, FinalN, "frw")
 
 	fmt.Printf("\n Finished calculating FFT of part A...\n")
 	
@@ -342,7 +341,7 @@ func ForwFft1D(X []float32, ReqComponents int) []float32 {
 
 	fmt.Printf("\n Calculating FFT of part B...\n")
 
-	PartBForwFFT := FindClfft(ForwFftB, FinalN, "frw")
+	PartBForwFFT := purefft.FindClfft(ForwFftB, FinalN, "frw")
 
 	fmt.Printf("\n Finished calculating FFT of part B...\n ")
 	/*++++++++++++++++++++++++++++++++++++++++++++++++++++Forward FFT Part B ends here++++++++++++++++++++++++++++++++++++++++++++++++***/
@@ -362,11 +361,10 @@ func ForwFft1D(X []float32, ReqComponents int) []float32 {
 	/***++++++++++++++++++Bitwise multiplication for Forward FFT of Part A and Part B ends here++++++++++++++++++++++++++++++++++++++++***/
 
 
-
 	/***********************************Forward DFT by taking iverse of A* B begins here*************************************************************/
 	fmt.Printf("\n Calculating Inverse FFT of  A*B...\n")
 
-	InvAxB := FindClfft(DftMulAB, FinalN, "inv")
+	InvAxB := purefft.FindClfft(DftMulAB, FinalN, "inv")
 
 	fmt.Printf("\n Finished calculating Inverse FFT of A*B...\n ")
 	/*++++++++++++++++++++++++++++++++++Forward DFT by taking iverse of A* B ends here++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++***/
@@ -396,17 +394,27 @@ func ForwFft1D(X []float32, ReqComponents int) []float32 {
 //Function for Transpose
 
 //Function for 2D Forward FFT
-func ForwFft2D(BiggerX [][]float32, ReqComponents int) [][]float32 {
+func ForwFft2D(BiggerX [][]float32, len1 int, len2 int, ReqComponents int) {
+
+	Check1,Finder1 := blusteinCase(len1)
+	Check2,Finder2 := blusteinCase(len2)
+
+	if Check1 == 0 && Finder1 == 1 && Check2 == 0 && Finder2 == 1 { 
+		fmt.Printf("\n Bluesteins Implementation not necessary. Finding FFT directly...\n")
+		//FinalResults := purefft.Find2DClfft(BiggerX[1],len1, len2,"frw")
+		//return FinalResults
+
+	}
 	
 	ToBeTransposed := make([][]float32, len(BiggerX))
 	for i := 0; i<len(BiggerX); i++ {
 		ToBeTransposed[i] = ForwFft1D(BiggerX[i],ReqComponents)
 	}
 
-	//Is tranpose supposed to happen on GPU??
+	//Is tranpose supposed to happen on GPU?? Yes. Use the nVidia Opencl Kernel
 
 
-	Final2dDftX := make([][]float32, len(BiggerX))
+	//Final2dDftX := make([][]float32, len(BiggerX))
 
-	return Final2dDftX
+	//return Final2dDftX
 }
