@@ -67,7 +67,12 @@ var OCLKernelsList = []string{
 	"mtgp32_normal",
 	"mtgp32_uniform",
 	"cmplx_mul",
-	"trans_pose",
+	"cmplx_transpose",
 	"pack_cmplx",
+	"compress_cmplx",
 	"hermitian2full",
+	"multwiddlefact",
+	"vartwiddlefa",
+	"finaltwiddlefact",
+	"scaledown",
 	"square"}
