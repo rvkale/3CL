@@ -59,7 +59,6 @@ func AddCubicAnisotropy2(Beff, m *data.Slice, Msat, k1, k2, k3, c1, c2 MSlice) {
 // see uniaxialanisotropy2.cl
 func AddUniaxialAnisotropy2(Beff, m *data.Slice, Msat, k1, k2, u MSlice) {
 	util.Argument(Beff.Size() == m.Size())
-
 	N := Beff.Len()
 	cfg := make1DConf(N)
 
