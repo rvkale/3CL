@@ -1,7 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"strconv"
+	"time"
+	"unsafe"
+
 	//"math"
 	//"math/cmplx"
 	//"encoding/json"
@@ -10,34 +17,682 @@ import (
 	//"strconv"
 	"flag"
 	"math/rand"
+
 	//"unsafe"
 	//"github.com/mumax/3cl/data"
 	//"github.com/mumax/3cl/engine"
-	"github.com/mumax/3cl/opencl"
-	"github.com/mumax/3cl/cmd/test_blu2d/fftwrapper"
 	"github.com/mumax/3cl/cmd/test_blu2d/purefft"
-
+	"github.com/mumax/3cl/data"
+	"github.com/mumax/3cl/opencl"
 	//"github.com/mumax/3cl/opencl/cl"
 )
 
+func findLength(tempLength int, fileName string) int {
+
+	var j int
+	m := make(map[string]int)
+	strLength := strconv.Itoa(tempLength)
+
+	jsonFile, _ := os.Open(fileName)
+	defer jsonFile.Close()
+	byteValue, _ := ioutil.ReadAll(jsonFile)
+	json.Unmarshal([]byte(byteValue), &m)
+
+	j = m[strLength]
+
+	// fmt.Printf("The value of the required length is: %v", j)
+
+	m = nil
+
+	return j
+
+}
+
+func blusteinCase(length int) (int, int) {
+	switch {
+	case length > 128000000:
+		return length, -1
+	case length > 115200000:
+		return findLength(length, "new_length_lookup_10.json"), 1 //Hardcoded filenames
+	case length > 102400000:
+		return findLength(length, "new_length_lookup_9.json"), 1
+	case length > 89600000:
+		return findLength(length, "new_length_lookup_8.json"), 1
+	case length > 76800000:
+		return findLength(length, "new_length_lookup_7.json"), 1
+	case length > 64000000:
+		return findLength(length, "new_length_lookup_6.json"), 1
+	case length > 51200000:
+		return findLength(length, "new_length_lookup_5.json"), 1
+	case length > 38400000:
+		return findLength(length, "new_length_lookup_4.json"), 1
+	case length > 25600000:
+		return findLength(length, "new_length_lookup_3.json"), 1
+	case length > 12800000:
+		return findLength(length, "new_length_lookup_2.json"), 1
+	case length > 1:
+		return findLength(length, "new_length_lookup_1.json"), 1
+	case length < 2:
+		return length, -2
+	}
+	return length, -3
+}
 
 var (
-	Flag_gpu = flag.Int("gpu", 0, "Specify GPU")
+	Flag_gpu   = flag.Int("gpu", 0, "Specify GPU")
 	Flag_size  = flag.Int("length", 359, "length of data to test")
 	Flag_print = flag.Bool("print", false, "Print out result")
 	Flag_comp  = flag.Int("components", 1, "Number of components to test")
 	//Flag_conj  = flag.Bool("conjugate", false, "Conjugate B in multiplication")
 )
 
+//FftPlanValue Structure to identify the plan for processing
+type FftPlanValue struct {
+	IsForw, IsRealHerm, IsSinglePreci bool
+	RowDim, ColDim, DepthDim          int
+}
+
+//BoolGen to generate random plan values
+func BoolGen() bool {
+	var src = rand.NewSource(time.Now().UnixNano())
+	var r = rand.New(src)
+	return r.Int63n(2) == 0
+}
+
+//Big2SmallSlice To obtain small slice from big slice
+func Big2SmallSlice(OutSlice, InSlice *data.Slice, size_info [3]int, OffsetRow, OffsetCol int) {
+
+	ptrs := make([]unsafe.Pointer, 1)
+	ptrs[0] = unsafe.Pointer(InSlice.DevPtr(0))
+	OutSlice = data.SliceFromPtrs(size_info, (int8)(InSlice.MemType()), ptrs)
+}
+
+//Small2BigSlice To obtain big slice from small slice
+func Small2BigSlice(OutSlice, InSlice *data.Slice, size_info [3]int, OffsetRow, OffsetCol int) {
+	ptrs := make([]unsafe.Pointer, size_info[0])
+	for i := range ptrs {
+		//util.Argument(size_info[0] == size_info[0]*size_info[1]*size_info[2])
+		ptrs[i] = unsafe.Pointer(InSlice.DevPtr(0))
+	}
+	OutSlice = data.SliceFromPtrs(size_info, (int8)(InSlice.MemType()), ptrs)
+
+}
+
+//Parse1DInput to identify the details about the FFT
+func Parse1DInput(InpBuf *data.Slice, class interface{}) *data.Slice {
+	fmt.Printf("\n Parsing the input to execute appropriate FFT function...\n")
+	c, ok := class.(FftPlanValue)
+	if !ok {
+		panic("\n Wrong Input given... Terminating...\n")
+	}
+
+	//bufX, errC := context.CreateEmptyBuffer(cl.MemWriteOnly, c.RowDim*2*int(unsafe.Sizeof(X[0])))
+
+	var IsBlusteinsReq bool
+
+	//Check if new length is valid and if Blusteins Algorithm is required
+
+	FinalN, Desci := blusteinCase(c.RowDim) //Desci is decision variable
+
+	switch Desci {
+	case -1:
+		panic("\n Error! Length too large to handle! Terminating immidiately...")
+	case -2:
+		panic("\n Error! Length too small/negative to handle! Terminating immidiately...")
+	case -3:
+		panic("\n Something is weird! Terminating... Check immidiately...")
+	case 1:
+		if FinalN == 0 {
+			// fmt.Printf("\n Bluestein is not required. Executing clFFT with length %v...", BluN)
+			FinalN = c.RowDim
+			IsBlusteinsReq = false
+		} else {
+			FinalN = 2 * FinalN
+			IsBlusteinsReq = true
+		}
+		fmt.Printf("\n Adjusting length and finding FFT using Blusteins Algorithm with Legnth = %d...\n", FinalN)
+	}
+	//context := opencl.ClCtx
+	queue := opencl.ClCmdQueue
+
+	if !IsBlusteinsReq {
+		if c.IsForw {
+			if c.IsRealHerm {
+				OpBuf := data.NewSlice(int(*Flag_comp), [3]int{2 * (1 + c.RowDim/2), 1, 1})
+				fmt.Printf("\n Executing Forward Real FFT without Bluestein's ...\n")
+				purefft.Clfft1D(InpBuf, OpBuf, c.RowDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
+
+				fmt.Printf("\n Running Hermitian to Full \n")
+				FinalBuf := data.NewSlice(int(*Flag_comp), [3]int{2 * (1 + c.RowDim), 1, 1})
+				opencl.Hermitian2Full(FinalBuf, OpBuf)
+				fmt.Printf("\n Finished running Hermitian to Full. Final Output is ready \n")
+				return FinalBuf
+			} else {
+				FinalBuf := data.NewSlice(int(*Flag_comp), [3]int{2 * c.RowDim, 1, 1})
+				fmt.Printf("\n Executing Forward Complex FFT without Bluestein's ...\n")
+				purefft.Clfft1D(InpBuf, FinalBuf, c.RowDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
+				return FinalBuf
+			}
+
+		} else {
+			if c.IsRealHerm {
+				FinalBuf := data.NewSlice(int(*Flag_comp), [3]int{c.RowDim, 1, 1})
+				fmt.Printf("\n Executing Inverse Hermitian FFT without Bluestein's...\n")
+				purefft.Clfft1D(InpBuf, FinalBuf, c.RowDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
+				return FinalBuf
+
+			} else {
+				FinalBuf := data.NewSlice(int(*Flag_comp), [3]int{2 * c.RowDim, 1, 1})
+				fmt.Printf("\n Executing Inverse Complex FFT without Bluestein's...\n")
+				purefft.Clfft1D(InpBuf, FinalBuf, c.RowDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
+				return FinalBuf
+			}
+		}
+
+	} else {
+		if c.IsForw {
+			if c.IsRealHerm {
+				fmt.Printf("\n Executing Forward Real FFT with Bluesteins...\n")
+				GpuBuff := opencl.Buffer(int(*Flag_comp), [3]int{c.RowDim, 1, 1})
+				defer opencl.Recycle(GpuBuff)
+				data.Copy(GpuBuff, InpBuf)
+				fmt.Println("Waiting for data transfer to complete...")
+				queue.Finish()
+				fmt.Println("Input data transfer completed.")
+				PartABuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.RowDim, 1, 1})
+				defer opencl.Recycle(PartABuf)
+
+				fmt.Printf("\n Converting Real Part A to complex for multiplication with twiddle factor\n")
+				opencl.PackComplexArray(PartABuf, GpuBuff, c.RowDim, 0, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				PartAProcBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartAProcBuf)
+				fmt.Printf("\n Processing Part A with the twiddle factor \n")
+				opencl.PartAProcess(PartAProcBuf, PartABuf, c.RowDim, FinalN, 1, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				PartBBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartBBuf)
+				fmt.Printf("\n Generating part B for Bluesteins")
+				opencl.PartBTwidFac(PartBBuf, c.RowDim, FinalN, 1, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				fmt.Printf("\n Executing forward FFT for Part A \n")
+				PartAFFT := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartAFFT)
+				purefft.Clfft1D(PartAProcBuf, PartAFFT, FinalN, false, true, c.IsSinglePreci)
+				fmt.Printf("\n Executing forward FFT for Part B \n")
+				PartBFFT := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartBFFT)
+				purefft.Clfft1D(PartBBuf, PartBFFT, FinalN, false, true, c.IsSinglePreci)
+
+				fmt.Printf("\n Multiplying Part A and Part B FFT \n")
+				MulBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(MulBuff)
+				opencl.ComplexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, FinalN, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				fmt.Printf("\n Taking inverse FFT of multiplication \n")
+				InvBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(InvBuff)
+				purefft.Clfft1D(MulBuff, InvBuff, FinalN, false, false, c.IsSinglePreci)
+
+				fmt.Printf("\n Preparing final twiddle factor")
+				FinTwid := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				opencl.FinalMulTwid(FinTwid, c.RowDim, FinalN, 1, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				fmt.Printf("\n Multiplying with Final Twiddle Factor")
+				FinTempBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				opencl.ComplexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, FinalN, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+				return FinTempBuff
+
+			} else {
+				//fmt.Printf("\n Executing Forward Complex FFT ...\n")
+				fmt.Printf("\n Executing Forward Complex FFT with Bluesteins...\n")
+				PartABuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.RowDim, 1, 1})
+				defer opencl.Recycle(PartABuf)
+				data.Copy(PartABuf, InpBuf)
+				fmt.Println("Waiting for data transfer to complete...")
+				queue.Finish()
+				fmt.Println("Input data transfer completed.")
+				// PartABuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.RowDim, 1, 1})
+				// defer opencl.Recycle(PartABuf)
+
+				// fmt.Printf("\n Converting Real Part A to complex for multiplication with twiddle factor\n")
+				// opencl.PackComplexArray(PartABuf, GpuBuff, c.RowDim, 0, 0)
+				// fmt.Println("\n Waiting for kernel to finish execution...")
+				// queue.Finish()
+				// fmt.Println("\n Execution finished.")
+
+				PartAProcBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartAProcBuf)
+				fmt.Printf("\n Processing Part A with the twiddle factor \n")
+				opencl.PartAProcess(PartAProcBuf, PartABuf, c.RowDim, FinalN, 1, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				PartBBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartBBuf)
+				fmt.Printf("\n Generating part B for Bluesteins")
+				opencl.PartBTwidFac(PartBBuf, c.RowDim, FinalN, 1, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				fmt.Printf("\n Executing forward FFT for Part A \n")
+				PartAFFT := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartAFFT)
+				purefft.Clfft1D(PartAProcBuf, PartAFFT, FinalN, false, true, c.IsSinglePreci)
+				fmt.Printf("\n Executing forward FFT for Part B \n")
+				PartBFFT := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartBFFT)
+				purefft.Clfft1D(PartBBuf, PartBFFT, FinalN, false, true, c.IsSinglePreci)
+
+				fmt.Printf("\n Multiplying Part A and Part B FFT \n")
+				MulBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(MulBuff)
+				opencl.ComplexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, FinalN, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				fmt.Printf("\n Taking inverse FFT of multiplication \n")
+				InvBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(InvBuff)
+				purefft.Clfft1D(MulBuff, InvBuff, FinalN, false, false, c.IsSinglePreci)
+
+				fmt.Printf("\n Preparing final twiddle factor")
+				FinTwid := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				opencl.FinalMulTwid(FinTwid, c.RowDim, FinalN, 1, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				fmt.Printf("\n Multiplying with Final Twiddle Factor")
+				FinTempBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				opencl.ComplexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, FinalN, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+				return FinTempBuff
+
+			}
+		} else {
+			if c.IsRealHerm {
+				//fmt.Printf("\n Executing Inverse Hermitian FFT ...\n")
+				fmt.Printf("\n Executing Inverse Real FFT with Bluesteins...\n")
+				GpuBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * (1 + c.RowDim/2), 1, 1})
+				defer opencl.Recycle(GpuBuff)
+				data.Copy(GpuBuff, InpBuf)
+				fmt.Println("Waiting for data transfer to complete...")
+				queue.Finish()
+				fmt.Println("Input data transfer completed.")
+				PartABuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.RowDim, 1, 1})
+				defer opencl.Recycle(PartABuf)
+
+				fmt.Printf("\n Converting Hermitian to Full Complex of Part A to complex for multiplication with twiddle factor\n")
+				opencl.Hermitian2Full(PartABuf, GpuBuff)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				PartAProcBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartAProcBuf)
+				fmt.Printf("\n Processing Part A with the twiddle factor \n")
+				opencl.PartAProcess(PartAProcBuf, PartABuf, c.RowDim, FinalN, -1, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				PartBBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartBBuf)
+				fmt.Printf("\n Generating part B for Bluesteins")
+				opencl.PartBTwidFac(PartBBuf, c.RowDim, FinalN, -1, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				fmt.Printf("\n Executing forward FFT for Part A \n")
+				PartAFFT := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartAFFT)
+				purefft.Clfft1D(PartAProcBuf, PartAFFT, FinalN, false, true, c.IsSinglePreci)
+				fmt.Printf("\n Executing forward FFT for Part B \n")
+				PartBFFT := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartBFFT)
+				purefft.Clfft1D(PartBBuf, PartBFFT, FinalN, false, true, c.IsSinglePreci)
+				fmt.Printf("\n Multiplying Part A and Part B FFT \n")
+				MulBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(MulBuff)
+				opencl.ComplexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, FinalN, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				fmt.Printf("\n Taking inverse FFT of multiplication \n")
+				InvBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(InvBuff)
+				purefft.Clfft1D(MulBuff, InvBuff, FinalN, false, false, c.IsSinglePreci)
+
+				fmt.Printf("\n Preparing final twiddle factor")
+				FinTwid := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				opencl.FinalMulTwid(FinTwid, c.RowDim, FinalN, -1, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				fmt.Printf("\n Multiplying with Final Twiddle Factor")
+				FinTempBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				opencl.ComplexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, FinalN, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+				return FinTempBuff
+
+			} else {
+				fmt.Printf("\n Executing Inverse Complex FFT ...\n")
+				fmt.Printf("\n Executing Forward Complex FFT with Bluesteins...\n")
+				PartABuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.RowDim, 1, 1})
+				defer opencl.Recycle(PartABuf)
+				data.Copy(PartABuf, InpBuf)
+				fmt.Println("Waiting for data transfer to complete...")
+				queue.Finish()
+				fmt.Println("Input data transfer completed.")
+				// PartABuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.RowDim, 1, 1})
+				// defer opencl.Recycle(PartABuf)
+
+				// fmt.Printf("\n Converting Real Part A to complex for multiplication with twiddle factor\n")
+				// opencl.PackComplexArray(PartABuf, GpuBuff, c.RowDim, 0, 0)
+				// fmt.Println("\n Waiting for kernel to finish execution...")
+				// queue.Finish()
+				// fmt.Println("\n Execution finished.")
+
+				PartAProcBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartAProcBuf)
+				fmt.Printf("\n Processing Part A with the twiddle factor \n")
+				opencl.PartAProcess(PartAProcBuf, PartABuf, c.RowDim, FinalN, -1, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				PartBBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartBBuf)
+				fmt.Printf("\n Generating part B for Bluesteins")
+				opencl.PartBTwidFac(PartBBuf, c.RowDim, FinalN, -1, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				fmt.Printf("\n Executing forward FFT for Part A \n")
+				PartAFFT := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartAFFT)
+				purefft.Clfft1D(PartAProcBuf, PartAFFT, FinalN, false, true, c.IsSinglePreci)
+				fmt.Printf("\n Executing forward FFT for Part B \n")
+				PartBFFT := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(PartBFFT)
+				purefft.Clfft1D(PartBBuf, PartBFFT, FinalN, false, true, c.IsSinglePreci)
+
+				fmt.Printf("\n Multiplying Part A and Part B FFT \n")
+				MulBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(MulBuff)
+				opencl.ComplexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, FinalN, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				fmt.Printf("\n Taking inverse FFT of multiplication \n")
+				InvBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				defer opencl.Recycle(InvBuff)
+				purefft.Clfft1D(MulBuff, InvBuff, FinalN, false, false, c.IsSinglePreci)
+
+				fmt.Printf("\n Preparing final twiddle factor")
+				FinTwid := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				opencl.FinalMulTwid(FinTwid, c.RowDim, FinalN, -1, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+
+				fmt.Printf("\n Multiplying with Final Twiddle Factor")
+				FinTempBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * FinalN, 1, 1})
+				opencl.ComplexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, FinalN, 0)
+				fmt.Println("\n Waiting for kernel to finish execution...")
+				queue.Finish()
+				fmt.Println("\n Execution finished.")
+				return FinTempBuff
+
+			}
+		}
+	}
+}
+
+//Parse2DInput Function to calculate FFT of 2D data. Either directly or Bluesteins)
+func Parse2DInput(InpBuf *data.Slice, class interface{}) {
+
+	fmt.Printf("\n Parsing the input to execute appropriate FFT function...\n")
+	c, ok := class.(FftPlanValue)
+	if !ok {
+		panic("\n Wrong Input given... Terminating...\n")
+	}
+	//context := opencl.ClCtx
+	queue := opencl.ClCmdQueue
+
+	fmt.Printf("\n Calculating 2D FFT for the given input \n")
+	//var IsBlusteinRow, IsBlusteinCol bool
+	ValRow, DecideRow := blusteinCase(c.RowDim)
+	ValCol, DecideCol := blusteinCase(c.ColDim)
+	if (DecideRow == 1) && (DecideCol == 1) {
+		if (ValRow == 0) && (ValCol == 0) {
+			fmt.Printf("\n No need to execute Blusteins for any dimension. Executing CLFFT directly \n")
+			if c.IsForw {
+				if c.IsRealHerm {
+					OpBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * (1 + c.ColDim*c.RowDim/2), 1, 1})
+					fmt.Printf("\n Executing Forward Real FFT without Bluestein's ...\n")
+					purefft.Clfft2D(InpBuf, OpBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
+
+					fmt.Printf("\n Running Hermitian to Full \n")
+					FinalBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * (1 + c.ColDim*c.RowDim), 1, 1})
+					opencl.Hermitian2Full(FinalBuf, OpBuf)
+					fmt.Printf("\n Finished running Hermitian to Full. Final Output is ready \n")
+				} else {
+					FinalBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.ColDim * c.RowDim, 1, 1})
+					fmt.Printf("\n Executing Forward Complex FFT without Bluestein's ...\n")
+					purefft.Clfft2D(InpBuf, FinalBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
+				}
+
+			} else {
+				if c.IsRealHerm {
+					FinalBuf := opencl.Buffer(int(*Flag_comp), [3]int{c.ColDim * c.RowDim, 1, 1})
+					fmt.Printf("\n Executing Inverse Hermitian FFT without Bluestein's...\n")
+					purefft.Clfft2D(InpBuf, FinalBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
+
+				} else {
+					FinalBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.RowDim * c.RowDim, 1, 1})
+					fmt.Printf("\n Executing Inverse Complex FFT without Bluestein's...\n")
+					purefft.Clfft2D(InpBuf, FinalBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
+				}
+			}
+		}
+	}
+
+	if c.IsForw {
+		if c.IsRealHerm {
+			fmt.Printf("\n Executing Forward 2D FFT using Blusteins \n")
+			MainDestBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			TempDestBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValCol, 1, 1})
+			for i := 0; i < int(*Flag_comp); i++ {
+				Big2SmallSlice(TempDestBuff, InpBuf, [3]int{2 * ValCol, 1, 1}, i, 1)
+				RowBuf := Parse1DInput(TempDestBuff, class)
+				Small2BigSlice(MainDestBuff, RowBuf, [3]int{2 * ValCol * ValRow, 1, 1}, i, 1)
+			}
+
+			TransDestBuff := data.NewSlice(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			opencl.ComplexMatrixTranspose(TransDestBuff, MainDestBuff, 0, ValRow, ValCol)
+			fmt.Println("Waiting for kernel to finish execution...")
+			queue.Finish()
+			fmt.Println("Execution finished.")
+
+			//OpBuf := data.NewSlice(int(*Flag_comp), [3]int{2 * (1 + c.ColDim*c.RowDim/2), 1, 1})
+			MainFftBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			TempFftBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValCol, 1, 1})
+			for i := 0; i < int(*Flag_comp); i++ {
+				Big2SmallSlice(TempFftBuff, TransDestBuff, [3]int{2 * ValCol, 1, 1}, i, 1)
+				RowBuf := Parse1DInput(TempFftBuff, class)
+				Small2BigSlice(MainFftBuff, RowBuf, [3]int{2 * ValCol * ValRow, 1, 1}, i, 1)
+			}
+			// fmt.Printf("\n Executing Forward Real FFT without Bluestein's ...\n")
+			// purefft.Clfft2D(InpBuf, OpBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
+
+			FinalTranBuff := data.NewSlice(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			opencl.ComplexMatrixTranspose(FinalTranBuff, MainFftBuff, 0, ValRow, ValCol)
+			fmt.Println("Waiting for kernel to finish execution...")
+			queue.Finish()
+			fmt.Println("Execution finished.")
+			fmt.Printf("\n Finished running Hermitian to Full. Final Output is ready \n")
+		} else {
+			fmt.Printf("\n Executing Forward 2D FFT using Blusteins \n")
+			MainDestBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			TempDestBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValCol, 1, 1})
+			for i := 0; i < int(*Flag_comp); i++ {
+				Big2SmallSlice(TempDestBuff, InpBuf, [3]int{2 * ValCol, 1, 1}, i, 1)
+				RowBuf := Parse1DInput(TempDestBuff, class)
+				Small2BigSlice(MainDestBuff, RowBuf, [3]int{2 * ValCol * ValRow, 1, 1}, i, 1)
+			}
+
+			TransDestBuff := data.NewSlice(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			opencl.ComplexMatrixTranspose(TransDestBuff, MainDestBuff, 0, ValRow, ValCol)
+			fmt.Println("Waiting for kernel to finish execution...")
+			queue.Finish()
+			fmt.Println("Execution finished.")
+
+			//OpBuf := data.NewSlice(int(*Flag_comp), [3]int{2 * (1 + c.ColDim*c.RowDim/2), 1, 1})
+			MainFftBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			TempFftBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValCol, 1, 1})
+			for i := 0; i < int(*Flag_comp); i++ {
+				Big2SmallSlice(TempFftBuff, TransDestBuff, [3]int{2 * ValCol, 1, 1}, i, 1)
+				RowBuf := Parse1DInput(TempFftBuff, class)
+				Small2BigSlice(MainFftBuff, RowBuf, [3]int{2 * ValCol * ValRow, 1, 1}, i, 1)
+			}
+			// fmt.Printf("\n Executing Forward Real FFT without Bluestein's ...\n")
+			// purefft.Clfft2D(InpBuf, OpBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
+
+			FinalTranBuff := data.NewSlice(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			opencl.ComplexMatrixTranspose(FinalTranBuff, MainFftBuff, 0, ValRow, ValCol)
+			fmt.Println("Waiting for kernel to finish execution...")
+			queue.Finish()
+			fmt.Println("Execution finished.")
+			fmt.Printf("\n Finished running Hermitian to Full. Final Output is ready \n")
+			// FinalBuf := data.NewSlice(int(*Flag_comp), [3]int{2 * c.ColDim * c.RowDim, 1, 1})
+			// fmt.Printf("\n Executing Forward Complex FFT without Bluestein's ...\n")
+			// purefft.Clfft2D(InpBuf, FinalBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
+		}
+
+	} else {
+		if c.IsRealHerm {
+			fmt.Printf("\n Executing Forward 2D FFT using Blusteins \n")
+			MainDestBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			TempDestBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValCol, 1, 1})
+			for i := 0; i < int(*Flag_comp); i++ {
+				Big2SmallSlice(TempDestBuff, InpBuf, [3]int{2 * ValCol, 1, 1}, i, 1)
+				RowBuf := Parse1DInput(TempDestBuff, class)
+				Small2BigSlice(MainDestBuff, RowBuf, [3]int{2 * ValCol * ValRow, 1, 1}, i, 1)
+			}
+
+			TransDestBuff := data.NewSlice(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			opencl.ComplexMatrixTranspose(TransDestBuff, MainDestBuff, 0, ValRow, ValCol)
+			fmt.Println("Waiting for kernel to finish execution...")
+			queue.Finish()
+			fmt.Println("Execution finished.")
+
+			//OpBuf := data.NewSlice(int(*Flag_comp), [3]int{2 * (1 + c.ColDim*c.RowDim/2), 1, 1})
+			MainFftBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			TempFftBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValCol, 1, 1})
+			for i := 0; i < int(*Flag_comp); i++ {
+				Big2SmallSlice(TempFftBuff, TransDestBuff, [3]int{2 * ValCol, 1, 1}, i, 1)
+				RowBuf := Parse1DInput(TempFftBuff, class)
+				Small2BigSlice(MainFftBuff, RowBuf, [3]int{2 * ValCol * ValRow, 1, 1}, i, 1)
+			}
+			// fmt.Printf("\n Executing Forward Real FFT without Bluestein's ...\n")
+			// purefft.Clfft2D(InpBuf, OpBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
+
+			FinalTranBuff := data.NewSlice(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			opencl.ComplexMatrixTranspose(FinalTranBuff, MainFftBuff, 0, ValRow, ValCol)
+			fmt.Println("Waiting for kernel to finish execution...")
+			queue.Finish()
+			fmt.Println("Execution finished.")
+			fmt.Printf("\n Finished running Hermitian to Full. Final Output is ready \n")
+
+		} else {
+			fmt.Printf("\n Executing Forward 2D FFT using Blusteins \n")
+			MainDestBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			TempDestBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValCol, 1, 1})
+			for i := 0; i < int(*Flag_comp); i++ {
+				Big2SmallSlice(TempDestBuff, InpBuf, [3]int{2 * ValCol, 1, 1}, i, 1)
+				RowBuf := Parse1DInput(TempDestBuff, class)
+				Small2BigSlice(MainDestBuff, RowBuf, [3]int{2 * ValCol * ValRow, 1, 1}, i, 1)
+			}
+
+			TransDestBuff := data.NewSlice(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			opencl.ComplexMatrixTranspose(TransDestBuff, MainDestBuff, 0, ValRow, ValCol)
+			fmt.Println("Waiting for kernel to finish execution...")
+			queue.Finish()
+			fmt.Println("Execution finished.")
+
+			//OpBuf := data.NewSlice(int(*Flag_comp), [3]int{2 * (1 + c.ColDim*c.RowDim/2), 1, 1})
+			MainFftBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			TempFftBuff := opencl.Buffer(int(*Flag_comp), [3]int{2 * ValCol, 1, 1})
+			for i := 0; i < int(*Flag_comp); i++ {
+				Big2SmallSlice(TempFftBuff, TransDestBuff, [3]int{2 * ValCol, 1, 1}, i, 1)
+				RowBuf := Parse1DInput(TempFftBuff, class)
+				Small2BigSlice(MainFftBuff, RowBuf, [3]int{2 * ValCol * ValRow, 1, 1}, i, 1)
+			}
+			// fmt.Printf("\n Executing Forward Real FFT without Bluestein's ...\n")
+			// purefft.Clfft2D(InpBuf, OpBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
+
+			FinalTranBuff := data.NewSlice(int(*Flag_comp), [3]int{2 * ValRow * ValCol, 1, 1})
+			opencl.ComplexMatrixTranspose(FinalTranBuff, MainFftBuff, 0, ValRow, ValCol)
+			fmt.Println("Waiting for kernel to finish execution...")
+			queue.Finish()
+			fmt.Println("Execution finished.")
+			fmt.Printf("\n Finished running Hermitian to Full. Final Output is ready \n")
+		}
+	}
+
+}
 func main() {
-	
+
 	flag.Parse()
-	var Desci int //Descision variable
+	//var Desci int //Descision variable
 	N := int(*Flag_size)
-	ReqComponents := int(*Flag_comp)
-	opencl.Init(*Flag_gpu) 
-	rand.Seed(178)
+	//ReqComponents := int(*Flag_comp)
+	opencl.Init(*Flag_gpu)
+	rand.Seed(time.Now().Unix())
 	X := make([]float32, 2*N)
+	NComponents := int(*Flag_comp)
+	if N < 4 {
+		fmt.Println("argument to -fft must be 4 or greater!")
+		os.Exit(-1)
+	}
+	if (NComponents < 1) || (NComponents > 3) {
+		fmt.Println("argument to -components must be 1, 2 or 3!")
+		os.Exit(-1)
+	}
+
+	//opencl.Init(*engine.Flag_gpu)
 
 	/* Print input array */
 
@@ -53,18 +708,15 @@ func main() {
 		print_iter++
 	}
 
-	
-	
+	plan1d := FftPlanValue{BoolGen(), BoolGen(), BoolGen(), N, 1, 1}
+
 	// fmt.Printf("Enter the length as 67 for now: ")
 	// _, err := fmt.Scanf("%d", &N)
 	// if err!= nil {panic("Serious Error!")}
 
-
-	
 	/* Prepare OpenCL memory objects and place data inside them for . */
 	//Initialize GPU with a flag to pick the desired gpu
 	//opencl.Init(*engine.Flag_gpu)
-
 
 	platform := opencl.ClPlatform
 	fmt.Printf("Platform in use: \n")
@@ -123,153 +775,56 @@ func main() {
 	fmt.Printf("  Vendor: %s \n", d.Vendor())
 	fmt.Printf("  Version: %s \n", d.Version())
 
+	queue := opencl.ClCmdQueue
+
 	/* Zero Padding for adjusting the length if necessary*/
-	
+	fmt.Println("Generating input data...")
+	dataSize := N / 2
+	dataSize += 1
+	size := [3]int{2 * dataSize, 1, 1}
+	inputs := make([][]float32, NComponents)
+	for i := 0; i < NComponents; i++ {
+		inputs[i] = make([]float32, size[0])
+		for j := 0; j < len(inputs[i]); j++ {
+			inputs[i][j] = rand.Float32()
+		}
+	}
+	fmt.Println("Done. Transferring input data from CPU to GPU...")
+	cpuArray1d := data.SliceFromArray(inputs, size)
+	gpuBuffer := opencl.Buffer(NComponents, size)
+	// outBuffer := opencl.Buffer(NComponents, [3]int{2 * N, 1, 1})
+	// outArray := data.NewSlice(NComponents, [3]int{2 * N, 1, 1})
+
+	data.Copy(gpuBuffer, cpuArray1d)
+
+	fmt.Println("Waiting for data transfer to complete...")
+	queue.Finish()
+	fmt.Println("Input data transfer completed.")
+
+	Parse1DInput(cpuArray1d, plan1d)
+
+	size2d := [3]int{8, 2, 1}
+	inputs2d := make([][]float32, NComponents)
+	for i := 0; i < NComponents; i++ {
+		inputs2d[i] = make([]float32, size2d[0]*size2d[1])
+		for j := 0; j < size2d[0]; j++ {
+			for k := 0; k < size2d[1]; k++ {
+				x := rand.Float32()
+				y := rand.Float32()
+				idx := int(2 * (k + j*size2d[0]))
+				inputs2d[i][idx] = x
+				inputs2d[i][idx+1] = y
+				fmt.Printf("(%f, %f) ", x, y)
+			}
+			fmt.Printf("\n")
+		}
+	}
+
+	cpuArray2d := data.SliceFromArray(inputs2d, size2d)
+
+	plan2d := FftPlanValue{BoolGen(), BoolGen(), BoolGen(), N, 1, 1}
+	Parse2DInput(cpuArray2d, plan2d)
 
 	fmt.Printf("\n Checking FFT......\n")
-	print_iter = 0
-	for print_iter < N {
-		fmt.Printf("(%f, %f) ", FinalDftX[2*print_iter], FinalDftX[2*print_iter+1])
-		print_iter++
-	}
-	fmt.Printf("\n")
 
-	
-
-
-
-
-	/********************************************************************Inverse DFT**********************************************************************/
-
-	/* Zero Padding for adjusting the length if necessary*/
-	ZeroInvPadX := AddZero(FinalDftX, FinalN) //Padding zeros to extend lenth	
-
-	fmt.Printf("\n Finished adding zeros \n")
-
-	/********************************************************Inverse FFT Part A begins***************************************************/
-
-	InvFftA := InvProcessA(ZeroInvPadX, N) //Part A for Inverse FFT
-		
-	fmt.Printf("\n Calculating FFT of Inverse part A... \n")
-
-	PartAInvFFT := FindClfft(InvFftA, FinalN, "frw")
-
-	fmt.Printf("\n Finished calculating FFT of Inverse part A...\n")
-	
-
-	/***+++++++++++++++++++++++++++++++++++++++++++++++++++++++Inverse FFT Part A ends++++++++++++++++++++++++++++++++++++++++++++++*****/
-
-	/**********************************************************Inverse FFT Part B begins*************************************************/
-
-	InvFftB := InvProcessB(FinalN, N)
-
-	fmt.Printf("\n Calculating FFT of Inverse part B...\n")
-
-	PartBInvFFT := FindClfft(InvFftB, FinalN, "frw")
-
-	fmt.Printf("\n Finished calculating FFT of Inverse part B...\n ")
-
-	/*++++++++++++++++++++++++++++++++++++++++++++++++++++Inverse FFT Part B ends here++++++++++++++++++++++++++++++++++++++++++++++++***/
-
-	/*********************Bitwise multiplication for Inverse FFT Part a and Part b begins here****************************************/
-	fmt.Printf("\n Calculating multiplication of Inverse  A*B...\n")
-
-	DftInvaxb := Complex_multi(PartAInvFFT, PartBInvFFT, FinalN, ReqComponents)
-
-	fmt.Printf("\n Finished calculating multiplication of Inverse  A*B...\n")
-	/***++++++++++++++++++Bitwise multiplication for Inverse FFT Part a and Part b ends here++++++++++++++++++++++++++++++++++++++++***/
-	
-	
-	/***********************************Inverse DFT by taking iverse of A* B begins here*************************************************************/
-	fmt.Printf("\n Calculating Inverse FFT of inverse A*B...\n")
-
-	InvOfaxb := FindClfft(DftInvaxb, FinalN, "inv")
-
-	fmt.Printf("\n Finished calculating Inverse FFT of inverse A*B...\n ")
-	/*++++++++++++++++++++++++++++++++++Inverse DFT by taking iverse of A* B ends here++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++***/
-
-	/*********************Bitwise multiplication for Inverse FFT with Twiddle Factor begins here****************************************/
-	
-	InvTwiddle := InvFftTwid(FinalN, N)
-
-	fmt.Printf("\n Calculating multiplication with Inv Twiddle......\n")
-
-	InvFFTfinal := Complex_multi(InvTwiddle,InvOfaxb, FinalN, ReqComponents)
-
-	fmt.Printf("\n Finished calculating multiplication with Inv Twiddle......\n ")
-
-
-	
-	
-	/***++++++++++++++++++Bitwise multiplication for Inverse FFT with Twiddle Factor ends here++++++++++++++++++++++++++++++++++++++++***/
-
-	IntermVarx := RemoveZero(InvFFTfinal, N) //Removing zeros for final result
-
-	FinalVarx := make([]float32, len(IntermVarx))
-
-	fmt.Printf("\n Size of Part B FFT is %d \n", len(FinalVarx))
-	print_iter = 0
-	for print_iter < N {
-		FinalVarx[2*print_iter] = IntermVarx[2*print_iter]/float32(N)
-		FinalVarx[2*print_iter+1] = IntermVarx[2*print_iter+1]/float32(N)
-		fmt.Printf("(%f, %f) ", FinalVarx[2*print_iter], FinalVarx[2*print_iter+1])
-		print_iter++
-	}
-	fmt.Printf("\n")
-
-	opencl.ReleaseAndClean()
-
-
-	// //Testing results
-	// testArr0 := make([]float64, N)
-	// // testArr1 := make([]float64, N)
-	// //for ii := 0; ii < size[0]; ii++ {
-	// for ii := 0; ii < N; ii++ {
-	// 	testArr0[ii] = float64(FinalVarx[ii] - X[ii])
-		// testArr1[ii] = float64(FinalVarx[ii])
-	// for ii := N / 2; ii > 0; ii /= 2 {
-	// 	for jj := 0; jj < ii; jj++ {
-	// 		aVal := testArr0[jj]
-	// 		bVal := testArr0[jj+ii]
-	// 		tsum := aVal + bVal
-	// 		aEr := tsum - bVal
-	// 		bEr := tsum - aVal
-	// 		aErr := aEr - aVal
-	// 		bErr := bEr - bVal
-	// 		//testArr1[jj] += aErr + bErr
-	// 		testArr0[jj] = tsum
-	// 	}
-	// }
-	//golden := testArr0[0] - testArr1[0]
-
-	//tol := float64(golden * 1e-5)
-	//engine.Expect("Result", float64(results), float64(golden), tol)
-	// if float64(results) == golden {
-	// 	fmt.Println("Results match!")
-	// } else {
-	// 	fmt.Println("Results do not match! golden: ", golden, "; result: ", results)
-	// }
-
-	// fmt.Printf("Finished tests on sum\n")
-
-	// fmt.Printf("freeing resources \n")
-	// //	gpuBuffer.Free()
-	// opencl.Recycle(gpuBuffer)
-
-	// opencl.ReleaseAndClean()
-	
-	// //var k = []complex128 {complex(4,1), complex(10,2), complex(4,1), complex(10,2), complex(0,0)}
-	// //var z = []complex128
-	// var k = []float32 {4,1,10,2,4,1,10,2,0,0}
-	// var z []float32
-
-
-	// //z = AddZero( k, 5);
-	// z = PreProcessB(len(k),4)
-	// fmt.Printf( "\n Value is: %f + %fi", z[2],z[3]);
-	// fmt.Printf( "\n Value is: %f + %fi ", z[6],z[7]);
-	// fmt.Printf( "\n Value is: %f + %fi ", z[8],z[9]);
-	// fmt.Printf("\n Length of array %d", len(k))
-
-	
 }

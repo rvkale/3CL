@@ -1,0 +1,106 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"math/rand"
+	"unsafe"
+
+	"github.com/mumax/3cl/data"
+	"github.com/mumax/3cl/opencl"
+)
+
+var (
+	Flag_gpu = flag.Int("gpu", 0, "Specify GPU")
+	//Flag_size  = flag.Int("length", 359, "length of data to test")
+	//Flag_print = flag.Bool("print", false, "Print out result")
+	//Flag_comp  = flag.Int("components", 1, "Number of components to test")
+	//Flag_conj  = flag.Bool("conjugate", false, "Conjugate B in multiplication")
+)
+
+//Big2SmallSlice To obtain small slice from big slice
+func Big2SmallSlice(OutSlice, InSlice *data.Slice, size_info [3]int, OffsetRow, OffsetCol int) {
+
+	fmt.Printf("\n Coming in the function \n")
+	ptrs := make([]unsafe.Pointer, 1)
+	fmt.Printf("\n Executed line 1 \n")
+	ptrs[0] = unsafe.Pointer(InSlice.DevPtr(0))
+	fmt.Printf("\n Executed line 2 \n")
+	OutSlice = data.SliceFromPtrs(size_info, (int8)(InSlice.MemType()), ptrs)
+	fmt.Printf("\n Executed line 3 \n")
+}
+
+//Small2BigSlice To obtain big slice from small slice
+func Small2BigSlice(OutSlice, InSlice *data.Slice, size_info [3]int, OffsetRow, OffsetCol int) {
+	ptrs := make([]unsafe.Pointer, size_info[0])
+	for i := range ptrs {
+		//util.Argument(size_info[0] == size_info[0]*size_info[1]*size_info[2])
+		ptrs[i] = unsafe.Pointer(InSlice.DevPtr(0))
+	}
+	OutSlice = data.SliceFromPtrs(size_info, (int8)(InSlice.MemType()), ptrs)
+
+}
+
+func main() {
+
+	flag.Parse()
+	opencl.Init(*Flag_gpu)
+
+	platform := opencl.ClPlatform
+	fmt.Printf("Platform in use: \n")
+	fmt.Printf("  Vendor: %s \n", platform.Vendor())
+
+	fmt.Printf("Device in use: \n")
+
+	d := opencl.ClDevice
+	//fmt.Printf("Device %d (%s): %s \n", *engine.Flag_gpu, d.Type(), d.Name())
+	fmt.Printf("  Address Bits: %d \n", d.AddressBits())
+
+	queue := opencl.ClCmdQueue
+
+	/* Zero Padding for adjusting the length if necessary*/
+	fmt.Println("Generating input data...")
+	dataSize := 10
+	//dataSize += 1
+	size := [3]int{2 * dataSize, 1, 1}
+	inputs := make([][]float32, 1)
+	for i := 0; i < 1; i++ {
+		inputs[i] = make([]float32, size[0])
+		for j := 0; j < len(inputs[i]); j++ {
+			inputs[i][j] = rand.Float32()
+		}
+	}
+	fmt.Println("Done. Transferring input data from CPU to GPU...")
+	cpuArray1d := data.SliceFromArray(inputs, size)
+	gpuBuffer := opencl.Buffer(1, size)
+	// outBuffer := opencl.Buffer(NComponents, [3]int{2 * N, 1, 1})
+	// outArray := data.NewSlice(NComponents, [3]int{2 * N, 1, 1})
+
+	data.Copy(gpuBuffer, cpuArray1d)
+
+	fmt.Println("Waiting for data transfer to complete...")
+	queue.Finish()
+	fmt.Println("Input data transfer completed.")
+
+	fmt.Printf("\n Executing Forward 2D FFT using Blusteins \n")
+	//MainDestBuff := opencl.Buffer(1, [3]int{2 * 2 * 5, 1, 1})
+	TempDestBuff := opencl.Buffer(1, [3]int{2 * 5, 1, 1})
+	fmt.Printf("\n Finished intializing slices \n")
+	outArray := data.NewSlice(1, [3]int{2 * 5, 1, 1})
+	for i := 0; i < 2; i++ {
+		Big2SmallSlice(TempDestBuff, gpuBuffer, [3]int{2 * 5, 1, 1}, i, 1)
+		//Small2BigSlice(MainDestBuff, TempDestBuff, [3]int{2 * 5 * 2, 1, 1}, i, 1)
+		data.Copy(outArray, TempDestBuff)
+		fmt.Println("\n Waiting for data transfer to complete...")
+		queue.Finish()
+		fmt.Println("\n Output data transfer completed. Printing ")
+		result2 := outArray.Host()
+		//results := make([][]float32, 1)
+		for k := 0; k < 1; k++ {
+			//results[i] = make([]float32, 2*5*2)
+			for j := 1; j < 5; j++ {
+				fmt.Printf(" ( %f , %f ) ", result2[k][j-1], result2[k][j])
+			}
+		}
+	}
+}

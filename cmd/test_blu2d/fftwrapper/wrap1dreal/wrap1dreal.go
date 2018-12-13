@@ -1,14 +1,10 @@
 package wrap1dreal
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/cmplx"
-	"os"
-	"strconv"
 
 	//"math/rand"
 
@@ -18,57 +14,6 @@ import (
 )
 
 var Flag_conj = flag.Bool("conjugate", false, "Conjugate B in multiplication")
-
-func findLength(tempLength int, fileName string) int {
-
-	var j int
-	m := make(map[string]int)
-	strLength := strconv.Itoa(tempLength)
-
-	jsonFile, _ := os.Open(fileName)
-	defer jsonFile.Close()
-	byteValue, _ := ioutil.ReadAll(jsonFile)
-	json.Unmarshal([]byte(byteValue), &m)
-
-	j = m[strLength]
-
-	// fmt.Printf("The value of the required length is: %v", j)
-
-	m = nil
-
-	return j
-
-}
-
-func blusteinCase(length int) (int, int) {
-	switch {
-	case length > 128000000:
-		return length, -1
-	case length > 115200000:
-		return findLength(length, "new_length_lookup_10.json"), 1 //Hardcoded filenames
-	case length > 102400000:
-		return findLength(length, "new_length_lookup_9.json"), 1
-	case length > 89600000:
-		return findLength(length, "new_length_lookup_8.json"), 1
-	case length > 76800000:
-		return findLength(length, "new_length_lookup_7.json"), 1
-	case length > 64000000:
-		return findLength(length, "new_length_lookup_6.json"), 1
-	case length > 51200000:
-		return findLength(length, "new_length_lookup_5.json"), 1
-	case length > 38400000:
-		return findLength(length, "new_length_lookup_4.json"), 1
-	case length > 25600000:
-		return findLength(length, "new_length_lookup_3.json"), 1
-	case length > 12800000:
-		return findLength(length, "new_length_lookup_2.json"), 1
-	case length > 1:
-		return findLength(length, "new_length_lookup_1.json"), 1
-	case length < 2:
-		return length, -2
-	}
-	return length, -3
-}
 
 /**++++++++++++++++++++++++++++++++++++++++++++++Function for finding blusteins length ends here++++++++++++++++++++++++++++****/
 
@@ -181,17 +126,8 @@ func InvFftTwid(newLength int, origLength int) []float32 {
 	return InvTwid
 }
 
-/**********Function for Complex Multiplication******************/
-func Complex_multi(plier []float32, plicant []float32, dataSize int, NComponents int) []float32 {
-	if dataSize < 4 {
-		fmt.Println("argument to -length must be 4 or greater!")
-		os.Exit(-1)
-	}
-	if (NComponents < 1) || (NComponents > 3) {
-		fmt.Println("argument to -components must be 1, 2 or 3!")
-		os.Exit(-1)
-	}
-
+//ComplexMulti Multiplication of complex numbers
+func ComplexMulti(outArray, cpuArray0, cpuArray1 *data.Slice, dataSize int, NComponents int) {
 	queue := opencl.ClCmdQueue
 	//	device, context, queue := opencl.ClDevice, opencl.ClCtx, opencl.ClCmdQueue
 	kernels := opencl.KernList
@@ -218,32 +154,14 @@ func Complex_multi(plier []float32, plicant []float32, dataSize int, NComponents
 
 	fmt.Printf("\n Begin first run of cmplx_mul kernel... \n")
 
-	// Creating inputs
-	fmt.Println("\n Generating input data...")
-	dataSize *= 2
-	size := [3]int{dataSize, 1, 1}
-	inputs0 := make([][]float32, NComponents)
-	for i := 0; i < NComponents; i++ {
-		inputs0[i] = make([]float32, size[0])
-		for j := 0; j < len(inputs0[i]); j++ {
-			inputs0[i][j] = plier[j]
-		}
-	}
-	inputs1 := make([][]float32, NComponents)
-	for i := 0; i < NComponents; i++ {
-		inputs1[i] = make([]float32, size[0])
-		for j := 0; j < len(inputs1[i]); j++ {
-			inputs1[i][j] = plicant[j]
-		}
-	}
-
 	fmt.Println("Done. Transferring input data from CPU to GPU...")
-	cpuArray0 := data.SliceFromArray(inputs0, size)
-	cpuArray1 := data.SliceFromArray(inputs1, size)
+	size := [3]int{dataSize * 2, 1, 1}
+	//cpuArray0 := data.SliceFromArray(inputs0, size)
+	//cpuArray1 := data.SliceFromArray(inputs1, size)
 	gpuBuffer0 := opencl.Buffer(NComponents, size)
 	gpuBuffer1 := opencl.Buffer(NComponents, size)
-	outBuffer := opencl.Buffer(NComponents, [3]int{dataSize, 1, 1})
-	outArray := data.NewSlice(NComponents, [3]int{dataSize, 1, 1})
+	outBuffer := opencl.Buffer(NComponents, size)
+	//outArray := data.NewSlice(NComponents, [3]int{dataSize, 1, 1})
 
 	data.Copy(gpuBuffer0, cpuArray0)
 	data.Copy(gpuBuffer1, cpuArray1)
@@ -254,9 +172,9 @@ func Complex_multi(plier []float32, plicant []float32, dataSize int, NComponents
 
 	fmt.Println("Executing kernel...")
 	if *Flag_conj {
-		opencl.ComplexArrayMul(outBuffer, gpuBuffer0, gpuBuffer1, 1, dataSize/2, 0)
+		opencl.ComplexArrayMul(outBuffer, gpuBuffer0, gpuBuffer1, 1, dataSize, 0)
 	} else {
-		opencl.ComplexArrayMul(outBuffer, gpuBuffer0, gpuBuffer1, 0, dataSize/2, 0)
+		opencl.ComplexArrayMul(outBuffer, gpuBuffer0, gpuBuffer1, 0, dataSize, 0)
 	}
 	fmt.Println("Waiting for kernel to finish execution...")
 	queue.Finish()
@@ -266,53 +184,20 @@ func Complex_multi(plier []float32, plicant []float32, dataSize int, NComponents
 	data.Copy(outArray, outBuffer)
 	queue.Finish()
 	fmt.Println("Done.")
-	results := outArray.Host()
-	plication := make([]float32, dataSize)
-	for i := 0; i < NComponents; i++ {
-		for j := 0; j < len(inputs1[i]); j++ {
-			plication[j] = results[i][j]
-		}
-	}
+	// results := outArray.Host()
+	// plication := make([]float32, dataSize)
+	// for i := 0; i < NComponents; i++ {
+	// 	for j := 0; j < len(inputs1[i]); j++ {
+	// 		plication[j] = results[i][j]
+	// 	}
+	// }
 	fmt.Printf("Finished tests on cmplx_run\n")
 
 	fmt.Printf("freeing resources \n")
-	return plication
 }
 
 //Function for 1D Forward FFT
 func ForwFft1D(X []float32, ReqComponents int) []float32 {
-
-	//Check if Blusteins is required
-	Check1, Finder := blusteinCase(len(X))
-
-	if Check1 == 0 && Finder == 1 {
-		fmt.Printf("\n Bluesteins Implementation not necessary. Finding FFT directly...\n")
-		FinalResults := FindClfft(X, len(X), "frw")
-		return FinalResults
-
-	}
-	var BluN int
-
-	BluN = 2 * (len(X) + 1) //Minimum condition for Blustein's M>=2*N
-
-	//Check if new length is valid and if Blusteins Algorithm is required
-
-	FinalN, Desci := blusteinCase(BluN)
-
-	switch Desci {
-	case -1:
-		panic("\n Error! Length too large to handle! Terminating immidiately...")
-	case -2:
-		panic("\n Error! Length too small/negative to handle! Terminating immidiately...")
-	case -3:
-		panic("\n Something is weird! Terminating... Check immidiately...")
-	case 1:
-		if FinalN == 0 {
-			// fmt.Printf("\n Bluestein is not required. Executing clFFT with length %v...", BluN)
-			FinalN = BluN
-		}
-		fmt.Printf("\n Adjusting length and finding FFT using Blusteins Algorithm with Legnth = %d...\n", FinalN)
-	}
 
 	ZeroForwPadX := AddZero(X, FinalN) //Padding zeros to extend lenth
 
@@ -377,23 +262,4 @@ func ForwFft1D(X []float32, ReqComponents int) []float32 {
 
 	FinalDftX := RemoveZero(ForwFFTfinal, len(X)) //Removing zeros to extend lenth
 	return FinalDftX
-}
-
-//Function for 1D IDFT
-
-//Function for Transpose
-
-//Function for 2D Forward FFT
-func ForwFft2D(BiggerX [][]float32, ReqComponents int) [][]float32 {
-
-	ToBeTransposed := make([][]float32, len(BiggerX))
-	for i := 0; i < len(BiggerX); i++ {
-		ToBeTransposed[i] = ForwFft1D(BiggerX[i], ReqComponents)
-	}
-
-	//Is tranpose supposed to happen on GPU??
-
-	Final2dDftX := make([][]float32, len(BiggerX))
-
-	return Final2dDftX
 }

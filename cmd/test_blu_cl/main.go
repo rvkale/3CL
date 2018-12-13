@@ -1,17 +1,19 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"math/cmplx"
-	"encoding/json"
-	"os"
-	"io/ioutil"
-	"strconv"
-	"flag"
 	"math/rand"
+	"os"
+	"strconv"
 	"unsafe"
+
 	"github.com/mumax/3cl/data"
+
 	//"github.com/mumax/3cl/engine"
 	"github.com/mumax/3cl/opencl"
 	"github.com/mumax/3cl/opencl/cl"
@@ -19,7 +21,7 @@ import (
 
 // json filenames are hardcoded and are required to be in the same directory currently
 var (
-	Flag_gpu = flag.Int("gpu", 0, "Specify GPU")
+	Flag_gpu   = flag.Int("gpu", 0, "Specify GPU")
 	Flag_size  = flag.Int("length", 359, "length of data to test")
 	Flag_print = flag.Bool("print", false, "Print out result")
 	Flag_comp  = flag.Int("components", 1, "Number of components to test")
@@ -28,7 +30,7 @@ var (
 
 /*******************************Function for finding blusteins length begins here*******************************/
 func findLength(tempLength int, fileName string) int {
-	
+
 	var j int
 	m := make(map[string]int)
 	strLength := strconv.Itoa(tempLength)
@@ -43,39 +45,39 @@ func findLength(tempLength int, fileName string) int {
 	// fmt.Printf("The value of the required length is: %v", j)
 
 	m = nil
-	
+
 	return j
 
 }
 
-func blusteinCase(length int) (int,int) {
+func blusteinCase(length int) (int, int) {
 	switch {
 	case length > 128000000:
-		return length,-1
+		return length, -1
 	case length > 115200000:
-		return findLength(length, "new_length_lookup_10.json"),1 //Hardcoded filenames
+		return findLength(length, "/go/bin/new_length_lookup_10.json"), 1 //Hardcoded filenames
 	case length > 102400000:
-		return findLength(length, "new_length_lookup_9.json"),1
+		return findLength(length, "new_length_lookup_9.json"), 1
 	case length > 89600000:
-		return findLength(length, "new_length_lookup_8.json"),1
+		return findLength(length, "new_length_lookup_8.json"), 1
 	case length > 76800000:
-		return findLength(length, "new_length_lookup_7.json"),1
+		return findLength(length, "new_length_lookup_7.json"), 1
 	case length > 64000000:
-		return findLength(length, "new_length_lookup_6.json"),1
+		return findLength(length, "new_length_lookup_6.json"), 1
 	case length > 51200000:
-		return findLength(length, "new_length_lookup_5.json"),1
+		return findLength(length, "new_length_lookup_5.json"), 1
 	case length > 38400000:
-		return findLength(length, "new_length_lookup_4.json"),1
+		return findLength(length, "new_length_lookup_4.json"), 1
 	case length > 25600000:
-		return findLength(length, "new_length_lookup_3.json"),1
+		return findLength(length, "new_length_lookup_3.json"), 1
 	case length > 12800000:
-		return findLength(length, "new_length_lookup_2.json"),1
+		return findLength(length, "new_length_lookup_2.json"), 1
 	case length > 1:
-		return findLength(length, "new_length_lookup_1.json"),1
+		return findLength(length, "/bin/new_length_lookup_1.json"), 1
 	case length < 2:
-		return length,-2
+		return length, -2
 	}
-	return length,-3
+	return length, -3
 }
 
 /**++++++++++++++++++++++++++++++++++++++++++++++Function for finding blusteins length ends here++++++++++++++++++++++++++++****/
@@ -85,7 +87,7 @@ func AddZero(x []float32, zeroLength int) []float32 {
 	if len(x) >= 2*zeroLength {
 		return x
 	}
-	r := make([]float32, 2 * zeroLength)
+	r := make([]float32, 2*zeroLength)
 	copy(r, x)
 	return r
 }
@@ -96,7 +98,7 @@ func RemoveZero(x []float32, origLength int) []float32 {
 		return x
 	}
 	r := make([]float32, 2*origLength)
-	copy(r,x)
+	copy(r, x)
 	return r
 }
 
@@ -105,8 +107,8 @@ func PreProcessA(x []float32, origLength int) []float32 {
 	processedA := make([]float32, len(x))
 	var tempVal complex128
 	//fmt.Printf("\n Length of array %d", len(x))
-	for iter := 0; iter < origLength;iter++ {
-		tempVal = complex(float64(x[2*iter]),float64(x[2*iter + 1])) * cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(iter),float64(0)),complex128(2)) * (-1/complex(float64(origLength),float64(0))) * (1i))
+	for iter := 0; iter < origLength; iter++ {
+		tempVal = complex(float64(x[2*iter]), float64(x[2*iter+1])) * cmplx.Exp(math.Pi*cmplx.Pow(complex(float64(iter), float64(0)), complex128(2))*(-1/complex(float64(origLength), float64(0)))*(1i))
 		processedA[2*iter] = float32(real(tempVal))
 		processedA[2*iter+1] = float32(imag(tempVal))
 	}
@@ -117,29 +119,30 @@ func PreProcessA(x []float32, origLength int) []float32 {
 func PreProcessB(newLength int, origLength int) []float32 {
 	processedB := make([]float32, 2*newLength)
 	var tempVal complex128
-	for iter := 0; iter < int(newLength);iter++ {
+	for iter := 0; iter < int(newLength); iter++ {
 		//fmt.Printf("\n Executing")
-		if iter<origLength {
-			tempVal = cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(iter),float64(0)),complex128(2)) * (1/complex(float64(origLength),float64(0))) * (1i))
-		} else if iter<newLength {
-			tempVal = cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(newLength-iter),float64(0)),complex128(2)) * (1/complex(float64(origLength),float64(0))) * (1i))
+		if iter < origLength {
+			tempVal = cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(iter), float64(0)), complex128(2)) * (1 / complex(float64(origLength), float64(0))) * (1i))
+		} else if iter < newLength {
+			tempVal = cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(newLength-iter), float64(0)), complex128(2)) * (1 / complex(float64(origLength), float64(0))) * (1i))
 		}
 		processedB[2*iter] = float32(real(tempVal))
 		processedB[2*iter+1] = float32(imag(tempVal))
-		 
+
 	}
 	return processedB
 }
+
 //Function to find twiddle factor to multiply after A*B for forward FFT
-func ForwFftTwid(newLength int,origLength int) []float32 {
+func ForwFftTwid(newLength int, origLength int) []float32 {
 	ForwTwid := make([]float32, 2*newLength)
 	var tempVal complex128
-	for iter := 0; iter < newLength;iter++ {
-		tempVal = cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(iter),0),complex(float64(2),0)) * (1/complex(float64(origLength),float64(0))) * (-1i))
+	for iter := 0; iter < newLength; iter++ {
+		tempVal = cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(iter), 0), complex(float64(2), 0)) * (1 / complex(float64(origLength), float64(0))) * (-1i))
 		ForwTwid[2*iter] = float32(real(tempVal))
-		ForwTwid[2*iter + 1] = float32(imag(tempVal))
+		ForwTwid[2*iter+1] = float32(imag(tempVal))
 
-	}	
+	}
 	return ForwTwid
 }
 
@@ -148,8 +151,8 @@ func InvProcessA(x []float32, origLength int) []float32 {
 	FilteredA := make([]float32, len(x))
 	var tempVal complex128
 	//fmt.Printf("\n Length of array %d", len(x))
-	for iter := 0; iter < origLength;iter++ {
-		tempVal = complex(float64(x[2*iter]),float64(x[2*iter + 1])) * cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(iter),float64(0)),complex128(2)) * (1/complex(float64(origLength),float64(0))) * (1i))
+	for iter := 0; iter < origLength; iter++ {
+		tempVal = complex(float64(x[2*iter]), float64(x[2*iter+1])) * cmplx.Exp(math.Pi*cmplx.Pow(complex(float64(iter), float64(0)), complex128(2))*(1/complex(float64(origLength), float64(0)))*(1i))
 		FilteredA[2*iter] = float32(real(tempVal))
 		FilteredA[2*iter+1] = float32(imag(tempVal))
 	}
@@ -160,16 +163,16 @@ func InvProcessA(x []float32, origLength int) []float32 {
 func InvProcessB(newLength int, origLength int) []float32 {
 	FilteredB := make([]float32, 2*newLength)
 	var tempVal complex128
-	for iter := 0; iter < int(newLength);iter++ {
+	for iter := 0; iter < int(newLength); iter++ {
 		//fmt.Printf("\n Executing")
-		if iter<origLength {
-			tempVal = cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(iter),float64(0)),complex128(2)) * (-1/complex(float64(origLength),float64(0))) * (1i))
-		} else if iter<newLength {
-			tempVal = cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(newLength-iter),float64(0)),complex128(2)) * (-1/complex(float64(origLength),float64(0))) * (1i))
+		if iter < origLength {
+			tempVal = cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(iter), float64(0)), complex128(2)) * (-1 / complex(float64(origLength), float64(0))) * (1i))
+		} else if iter < newLength {
+			tempVal = cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(newLength-iter), float64(0)), complex128(2)) * (-1 / complex(float64(origLength), float64(0))) * (1i))
 		}
 		FilteredB[2*iter] = float32(real(tempVal))
 		FilteredB[2*iter+1] = float32(imag(tempVal))
-		 
+
 	}
 	return FilteredB
 }
@@ -178,22 +181,19 @@ func InvProcessB(newLength int, origLength int) []float32 {
 func InvFftTwid(newLength int, origLength int) []float32 {
 	InvTwid := make([]float32, 2*newLength)
 	var tempVal complex128
-	for iter := 0; iter < newLength;iter++ {
+	for iter := 0; iter < newLength; iter++ {
 		//tempVal = cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(iter),0),complex(float64(2),0)) * (1i))
-		tempVal = cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(iter),0),complex(float64(2),0)) * (1/complex(float64(origLength),float64(0))) * (1i))
+		tempVal = cmplx.Exp(math.Pi * cmplx.Pow(complex(float64(iter), 0), complex(float64(2), 0)) * (1 / complex(float64(origLength), float64(0))) * (1i))
 		InvTwid[2*iter] = float32(real(tempVal))
-		InvTwid[2*iter + 1] = float32(imag(tempVal))
+		InvTwid[2*iter+1] = float32(imag(tempVal))
 
-	}	
+	}
 	return InvTwid
 }
 
-
-
-
 // Function to find ClFFT of the given []float32
 
-func FindClfft(InputData []float32,N int,Direction string) []float32 {
+func FindClfft(InputData []float32, N int, Direction string) []float32 {
 	context := opencl.ClCtx
 	queue := opencl.ClCmdQueue
 	//kernels := opencl.KernList
@@ -307,10 +307,8 @@ func FindClfft(InputData []float32,N int,Direction string) []float32 {
 	return InputData
 }
 
-
-
 /**********Function for Complex Multiplication******************/
-func Complex_multi(plier []float32, plicant []float32,dataSize int, NComponents int) []float32 {
+func Complex_multi(plier []float32, plicant []float32, dataSize int, NComponents int) []float32 {
 	if dataSize < 4 {
 		fmt.Println("argument to -length must be 4 or greater!")
 		os.Exit(-1)
@@ -414,14 +412,13 @@ func Complex_multi(plier []float32, plicant []float32,dataSize int, NComponents 
 	return plication
 }
 
-
 func main() {
-	
+
 	flag.Parse()
 	var Desci int //Descision variable
 	N := int(*Flag_size)
 	ReqComponents := int(*Flag_comp)
-	opencl.Init(*Flag_gpu) 
+	opencl.Init(*Flag_gpu)
 	rand.Seed(178)
 	X := make([]float32, 2*N)
 
@@ -439,37 +436,34 @@ func main() {
 		print_iter++
 	}
 
-	Check1,Finder := blusteinCase(N)
+	Check1, Finder := blusteinCase(N)
 
 	fmt.Printf("Value of required length is %d", Check1)
 
 	if Check1 == 0 && Finder == 1 {
 		fmt.Printf("\n Bluesteins Implementation not necessary. Finding FFT directly...\n")
-		FinalResults := FindClfft(X,N,"frw")
+		FinalResults := FindClfft(X, N, "frw")
 		print_iter = 0
 		for print_iter < N {
 			fmt.Printf("(%f, %f) ", FinalResults[2*print_iter], FinalResults[2*print_iter+1])
 			print_iter++
 		}
 		fmt.Printf("\n")
-		panic("\n *******Terminating Program***********")		 
+		panic("\n *******Terminating Program***********")
 
 	}
-	
-	
+
 	// fmt.Printf("Enter the length as 67 for now: ")
 	// _, err := fmt.Scanf("%d", &N)
 	// if err!= nil {panic("Serious Error!")}
 
-
 	var BluN int
 
-	BluN = 2*(N+1) //Minimum condition for Blustein's M>=2*N
+	BluN = 2 * (N + 1) //Minimum condition for Blustein's M>=2*N
 
-	
 	//Check if new length is valid and if Blusteins Algorithm is required
 
-	FinalN,Desci := blusteinCase(BluN)
+	FinalN, Desci := blusteinCase(BluN)
 
 	switch Desci {
 	case -1:
@@ -486,11 +480,9 @@ func main() {
 		fmt.Printf("\n Adjusting length and finding FFT using Blusteins Algorithm with Legnth = %d...\n", FinalN)
 	}
 
-	
 	/* Prepare OpenCL memory objects and place data inside them for . */
 	//Initialize GPU with a flag to pick the desired gpu
 	//opencl.Init(*engine.Flag_gpu)
-
 
 	platform := opencl.ClPlatform
 	fmt.Printf("Platform in use: \n")
@@ -554,7 +546,6 @@ func main() {
 
 	/********************************************************Forward FFT Part A begins***************************************************/
 
-
 	ForwFftA := PreProcessA(ZeroForwPadX, N) //Part A for Forward FFT
 
 	fmt.Printf("\n Finished adding zeros \n")
@@ -564,7 +555,7 @@ func main() {
 	PartAForwFFT := FindClfft(ForwFftA, FinalN, "frw")
 
 	fmt.Printf("\n Finished calculating FFT of part A...\n")
-	
+
 	/***+++++++++++++++++++++++++++++++++++++++++++++++++++++++Forward FFT Part A ends++++++++++++++++++++++++++++++++++++++++++++++*****/
 
 	/**********************************************************Forward FFT Part B begins*************************************************/
@@ -578,7 +569,6 @@ func main() {
 	fmt.Printf("\n Finished calculating FFT of part B...\n ")
 	/*++++++++++++++++++++++++++++++++++++++++++++++++++++Forward FFT Part B ends here++++++++++++++++++++++++++++++++++++++++++++++++***/
 
-
 	/*********************Bitwise multiplication for Forward FFT of Part A and Part B begins here*******************************************/
 	// queue := opencl.ClCmdQueue
 	// //	device, context, queue := opencl.ClDevice, opencl.ClCtx, opencl.ClCmdQueue
@@ -588,10 +578,8 @@ func main() {
 	DftMulAB := Complex_multi(PartAForwFFT, PartBForwFFT, FinalN, ReqComponents)
 
 	fmt.Printf("\n Finished calculating multiplication of forward  A*B...\n")
-	
+
 	/***++++++++++++++++++Bitwise multiplication for Forward FFT of Part A and Part B ends here++++++++++++++++++++++++++++++++++++++++***/
-
-
 
 	/***********************************Forward DFT by taking iverse of A* B begins here*************************************************************/
 	fmt.Printf("\n Calculating Inverse FFT of  A*B...\n")
@@ -602,20 +590,16 @@ func main() {
 	/*++++++++++++++++++++++++++++++++++Forward DFT by taking iverse of A* B ends here++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++***/
 
 	/*********************Bitwise multiplication for Forward FFT with Twiddle Factor begins here****************************************/
-	
-	
+
 	ForwTwiddle := ForwFftTwid(FinalN, N)
 
 	fmt.Printf("\n Calculating multiplication with forw Twiddle...\n")
 
-	ForwFFTfinal := Complex_multi(ForwTwiddle,InvAxB, FinalN, ReqComponents)
+	ForwFFTfinal := Complex_multi(ForwTwiddle, InvAxB, FinalN, ReqComponents)
 
 	fmt.Printf("\n Finished calculating multiplication with forw Twiddle...\n ")
-	
-		
+
 	/***++++++++++++++++++Bitwise multiplication for Forward FFT with Twiddle Factor ends here++++++++++++++++++++++++++++++++++++++++***/
-
-
 
 	/***Remove padded zeros to get answer for the correct length*********/
 
@@ -629,28 +613,22 @@ func main() {
 	}
 	fmt.Printf("\n")
 
-	
-
-
-
-
 	/********************************************************************Inverse DFT**********************************************************************/
 
 	/* Zero Padding for adjusting the length if necessary*/
-	ZeroInvPadX := AddZero(FinalDftX, FinalN) //Padding zeros to extend lenth	
+	ZeroInvPadX := AddZero(FinalDftX, FinalN) //Padding zeros to extend lenth
 
 	fmt.Printf("\n Finished adding zeros \n")
 
 	/********************************************************Inverse FFT Part A begins***************************************************/
 
 	InvFftA := InvProcessA(ZeroInvPadX, N) //Part A for Inverse FFT
-		
+
 	fmt.Printf("\n Calculating FFT of Inverse part A... \n")
 
 	PartAInvFFT := FindClfft(InvFftA, FinalN, "frw")
 
 	fmt.Printf("\n Finished calculating FFT of Inverse part A...\n")
-	
 
 	/***+++++++++++++++++++++++++++++++++++++++++++++++++++++++Inverse FFT Part A ends++++++++++++++++++++++++++++++++++++++++++++++*****/
 
@@ -673,8 +651,7 @@ func main() {
 
 	fmt.Printf("\n Finished calculating multiplication of Inverse  A*B...\n")
 	/***++++++++++++++++++Bitwise multiplication for Inverse FFT Part a and Part b ends here++++++++++++++++++++++++++++++++++++++++***/
-	
-	
+
 	/***********************************Inverse DFT by taking iverse of A* B begins here*************************************************************/
 	fmt.Printf("\n Calculating Inverse FFT of inverse A*B...\n")
 
@@ -684,18 +661,15 @@ func main() {
 	/*++++++++++++++++++++++++++++++++++Inverse DFT by taking iverse of A* B ends here++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++***/
 
 	/*********************Bitwise multiplication for Inverse FFT with Twiddle Factor begins here****************************************/
-	
+
 	InvTwiddle := InvFftTwid(FinalN, N)
 
 	fmt.Printf("\n Calculating multiplication with Inv Twiddle......\n")
 
-	InvFFTfinal := Complex_multi(InvTwiddle,InvOfaxb, FinalN, ReqComponents)
+	InvFFTfinal := Complex_multi(InvTwiddle, InvOfaxb, FinalN, ReqComponents)
 
 	fmt.Printf("\n Finished calculating multiplication with Inv Twiddle......\n ")
 
-
-	
-	
 	/***++++++++++++++++++Bitwise multiplication for Inverse FFT with Twiddle Factor ends here++++++++++++++++++++++++++++++++++++++++***/
 
 	IntermVarx := RemoveZero(InvFFTfinal, N) //Removing zeros for final result
@@ -705,8 +679,8 @@ func main() {
 	fmt.Printf("\n Size of Part B FFT is %d \n", len(FinalVarx))
 	print_iter = 0
 	for print_iter < N {
-		FinalVarx[2*print_iter] = IntermVarx[2*print_iter]/float32(N)
-		FinalVarx[2*print_iter+1] = IntermVarx[2*print_iter+1]/float32(N)
+		FinalVarx[2*print_iter] = IntermVarx[2*print_iter] / float32(N)
+		FinalVarx[2*print_iter+1] = IntermVarx[2*print_iter+1] / float32(N)
 		fmt.Printf("(%f, %f) ", FinalVarx[2*print_iter], FinalVarx[2*print_iter+1])
 		print_iter++
 	}
@@ -714,14 +688,13 @@ func main() {
 
 	opencl.ReleaseAndClean()
 
-
 	// //Testing results
 	// testArr0 := make([]float64, N)
 	// // testArr1 := make([]float64, N)
 	// //for ii := 0; ii < size[0]; ii++ {
 	// for ii := 0; ii < N; ii++ {
 	// 	testArr0[ii] = float64(FinalVarx[ii] - X[ii])
-		// testArr1[ii] = float64(FinalVarx[ii])
+	// testArr1[ii] = float64(FinalVarx[ii])
 	// for ii := N / 2; ii > 0; ii /= 2 {
 	// 	for jj := 0; jj < ii; jj++ {
 	// 		aVal := testArr0[jj]
@@ -752,12 +725,11 @@ func main() {
 	// opencl.Recycle(gpuBuffer)
 
 	// opencl.ReleaseAndClean()
-	
+
 	// //var k = []complex128 {complex(4,1), complex(10,2), complex(4,1), complex(10,2), complex(0,0)}
 	// //var z = []complex128
 	// var k = []float32 {4,1,10,2,4,1,10,2,0,0}
 	// var z []float32
-
 
 	// //z = AddZero( k, 5);
 	// z = PreProcessB(len(k),4)
@@ -766,5 +738,4 @@ func main() {
 	// fmt.Printf( "\n Value is: %f + %fi ", z[8],z[9]);
 	// fmt.Printf("\n Length of array %d", len(k))
 
-	
 }

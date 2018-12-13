@@ -3,16 +3,17 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math/rand"
+	"os"
+
 	"github.com/mumax/3cl/data"
 	"github.com/mumax/3cl/engine"
 	"github.com/mumax/3cl/opencl"
 	"github.com/mumax/3cl/opencl/cl"
-	"math/rand"
-	"os"
 )
 
 var (
-	Flag_size  = flag.Int("length", 512, "length of data to test")
+	Flag_size  = flag.Int("length", 4, "length of data to test")
 	Flag_print = flag.Bool("print", false, "Print out result")
 	Flag_comp  = flag.Int("components", 1, "Number of components to test")
 )
@@ -93,10 +94,10 @@ func main() {
 	//	device, context, queue := opencl.ClDevice, opencl.ClCtx, opencl.ClCmdQueue
 	kernels := opencl.KernList
 
-	kernelObj := kernels["hermitian2full"]
+	kernelObj := kernels["pack_cmplx"]
 	totalArgs, err := kernelObj.NumArgs()
 	if err != nil {
-		fmt.Printf("Failed to get number of arguments of kernel: $+v \n", err)
+		fmt.Printf("Failed to get number of arguments of kernel: $%v \n", err)
 	} else {
 		fmt.Printf("Number of arguments in kernel : %d \n", totalArgs)
 	}
@@ -122,7 +123,9 @@ func main() {
 		inputs[i] = make([]float32, size[0])
 		for j := 0; j < len(inputs[i]); j++ {
 			inputs[i][j] = rand.Float32()
+			fmt.Printf(" ( %f ) ", inputs[i][j])
 		}
+		fmt.Printf("\n")
 	}
 
 	fmt.Println("Done. Transferring input data from CPU to GPU...")
@@ -148,6 +151,14 @@ func main() {
 	queue.Finish()
 	fmt.Println("Done.")
 	results := outArray.Host()
+	for i := 0; i < NComponents; i++ {
+		//inputs[i] = make([]float32, size[0])
+		for j := 0; j < len(results[i]); j++ {
+			//results[i][j] = rand.Float32()
+			fmt.Printf(" ( %f ) ", results[i][j])
+		}
+		fmt.Printf("\n")
+	}
 
 	for ii := 0; ii < NComponents; ii++ {
 		correct := 0
