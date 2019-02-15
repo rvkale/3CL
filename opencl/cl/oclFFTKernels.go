@@ -7,13 +7,11 @@ const oclFFTKernelSrc string = `
 // dst[i].y = a[i].x*b[i].y + a[i].y*b[i].x
 __kernel void
 cmplx_mul(__global float2* __restrict  dst, __global float2* __restrict  a, __global float2* __restrict b, const unsigned int conjB, const unsigned int N, const unsigned int offset) {
-
 	// Calculate indices
 	int local_idx = get_local_id(0); // Work-item index within workgroup
 	int grp_sz = get_local_size(0); // Total number of work-items in each workgroup
 	int grp_id = get_group_id(0); // Index of workgroup
 	int grp_offset = get_num_groups(0) * grp_sz; // Offset for memory access
-
 	for (int i = grp_id * grp_sz + local_idx; i < N; i += grp_offset) {
 		float2 aa = a[i+offset];
 		float2 bb = b[i+offset];
@@ -33,7 +31,6 @@ cmplx_mul(__global float2* __restrict  dst, __global float2* __restrict  a, __gl
 	dst[i+offset] = dd;
 	}
 }
-
 // Kernel to get an array of reals from a complex array
 __kernel void
 compress_cmplx(__global float* dst, __global float2* src, const unsigned int count, const unsigned int iOffset, const unsigned int oOffset)
@@ -44,14 +41,12 @@ compress_cmplx(__global float* dst, __global float2* src, const unsigned int cou
 	int grp_id = get_group_id(0); // Index of workgroup
 	int global_idx = grp_id * grp_sz + local_idx; // Calculate global index of work-item
 	int grp_offset = get_num_groups(0) * grp_sz; // Offset for memory access
-
 	while(global_idx < count) {
 		float2 a0 = src[global_idx + iOffset];
 		dst[global_idx + oOffset] = a0.x;
 		global_idx += grp_offset;
 	}
 }
-
 /*
  * Copyright 1993-2010 NVIDIA Corporation.  All rights reserved.
  *
@@ -62,11 +57,9 @@ compress_cmplx(__global float* dst, __global float2* src, const unsigned int cou
  * is strictly prohibited.
  *
  */
-
 /* Matrix transpose with OpenCL
 * Device code.
 */
-
 #define BLOCK_DIM 16
  // Tranpose of complex matrix
 // Offset is used to specify where the first row, first column entry of the matrix
@@ -95,7 +88,6 @@ cmplx_transpose(__global float2* dataOut, __global float2* dataIn, int offset, i
 		dataOut[index_out] = block[Idout];
 	}
 }
-
 // Tranpose of complex matrix
 // Offset is used to specify where the first row, first column entry of the matrix
 // is located in linear memory space
@@ -108,7 +100,6 @@ finaltwiddlefact(__global float2* dataOut, int origlength, int extenlength, int 
 	int grp_sz = get_local_size(0); // Total number of work-items in each workgroup
 	int grp_id = get_group_id(0); // Index of workgroup
 	int grp_offset = get_num_groups(0) * grp_sz; // Offset for memory access
-
 	if (fftdirec != 1) {
 		mul_sign = 1;
 	} else {
@@ -123,7 +114,6 @@ finaltwiddlefact(__global float2* dataOut, int origlength, int extenlength, int 
 	dataOut[i+offset] = dd;
 	}
 }
-
 // Kernel to convert a compact hermitian matrix into a full hermitian matrix
 __kernel void
 hermitian2full(__global float2* __restrict dst, __global float2* __restrict src, const unsigned int sz, const unsigned int count, __local float* scratchR, __local float* scratchI)
@@ -136,17 +126,14 @@ hermitian2full(__global float2* __restrict dst, __global float2* __restrict src,
 	int global_idx = currGrpOffset + local_idx; // Calculate global index of work-item
 	int ngrp = get_num_groups(0); // Get number of groups
 	int grp_offset = ngrp * grp_sz; // Offset for memory access
-
 	int currCnt = count - currGrpOffset; // Track how many items we have left to update in the array
 	int currSize = (currCnt < grp_sz) ? currCnt : grp_sz; // Default value of group size.
 	float2 tmpR0;
-
 	while (currCnt > 0) {
 		if (global_idx < count) {
 			tmpR0 = src[global_idx]; // Grab src array element
 			dst[global_idx] = tmpR0; // Copy the first half from src to dst
 			tmpR0.y *= -1.0f;
-
 			// Place reversed in local memory
 			int tmp_idx = currSize - local_idx - 1;
 			if (tmp_idx >= 0) {
@@ -154,10 +141,8 @@ hermitian2full(__global float2* __restrict dst, __global float2* __restrict src,
 				scratchI[tmp_idx] = tmpR0.y;
 			}
 		}
-
 		// Synchronize work-items
 		barrier(CLK_LOCAL_MEM_FENCE);
-
 		if (global_idx < count) {
 			// Retrieve in order from local memory and store in global memory
 			tmpR0.x = scratchR[local_idx];
@@ -167,22 +152,19 @@ hermitian2full(__global float2* __restrict dst, __global float2* __restrict src,
 				dst[outIdx] = tmpR0;
 			}
 		}
-
 		// Synchronize work-items
 		barrier(CLK_LOCAL_MEM_FENCE);
-
 		grp_id += ngrp;
 		global_idx += grp_offset;
-
 		currGrpOffset = grp_id * grp_sz;
 		currCnt = count - currGrpOffset; // Track how many items we have left to update in the array
 		currSize = (currCnt < grp_sz) ? currCnt : grp_sz;
 	}
 }
 
+// Kernel to find twiddle factor for FFT multiplication
 __kernel void
 multwiddlefact(__global float2* dataOut, int origlength, int extenlength, int fftdirec, int offset) {
-
     int mul_sign;
     // width = N (signal length)
 	// height = batch_size (number of signals in a batch)
@@ -190,7 +172,6 @@ multwiddlefact(__global float2* dataOut, int origlength, int extenlength, int ff
     int grp_sz = get_local_size(0); // Total number of work-items in each workgroup
     int grp_id = get_group_id(0); // Index of workgroup
     int grp_offset = get_num_groups(0) * grp_sz; // Offset for memory access
-
     if (fftdirec == 1) {
         mul_sign = 1;
     } else {
@@ -201,7 +182,6 @@ multwiddlefact(__global float2* dataOut, int origlength, int extenlength, int ff
         float2 dd;
 	    float theta;
         float tempsin;
-
         if (i < origlength) {
             theta = i * i * M_PI / origlength;
             dd.x = cos(theta);
@@ -216,12 +196,10 @@ multwiddlefact(__global float2* dataOut, int origlength, int extenlength, int ff
             dd.x = 0;
             dd.y = 0;
         }
-
 	    
 	    dataOut[i+offset] = dd;
     }
 }
-
 // Kernel to transfer an array of reals to a complex array
 __kernel void
 pack_cmplx(__global float2* dst, __global float* src, const unsigned int count, const unsigned int iOffset, const unsigned int oOffset)
@@ -232,7 +210,6 @@ pack_cmplx(__global float2* dst, __global float* src, const unsigned int count, 
 	int grp_id = get_group_id(0); // Index of workgroup
 	int global_idx = grp_id * grp_sz + local_idx; // Calculate global index of work-item
 	int grp_offset = get_num_groups(0) * grp_sz; // Offset for memory access
-
 	while(global_idx < count) {
 		float a0 = src[global_idx + iOffset];
 		float2 b0;
@@ -243,9 +220,49 @@ pack_cmplx(__global float2* dst, __global float* src, const unsigned int count, 
 	}
 }
 
+// Kernel to find initial twiddle factor for the FFT Calculation
+
+#define ONEPI 3.14159265359
+
+__kernel void
+vartwiddlefa(__global float2* dataOut, __global float2* dataIn, int origlength, int extenlength, int fftdirec, int offset) {
+    int mul_sign;
+    int local_idx = get_local_id(0);
+    int grp_sz = get_local_size(0);
+    int grp_id = get_local_id(0);
+    int grp_offset = get_num_groups(0) * grp_sz;
+
+    if(fftdirec == 1) {
+        mul_sign = -1;
+    } else {
+        mul_sign = 1;
+    }
+
+    for (int i = grp_id * grp_sz + local_idx; i < extenlength; i += 1) {
+        float2 dd, temp, tempip;
+        float theta, tempsin, xx, yy, xy, yx;
+        theta = i * i * ONEPI / origlength;
+        if(i < origlength) {
+            tempip = dataIn[i+offset];
+            temp.x = cos(theta);
+            tempsin = sin(theta);
+            temp.y = mul_sign * tempsin;
+            xx = tempip.x * temp.x;
+            yy = tempip.y * temp.y;
+            xy = tempip.x * temp.y;
+            yx = tempip.y * temp.x;
+            dd.x = xx - yy;
+            dd.y = xy + yx;
+        } else {
+            dd.x = 0;
+            dd.y = 0;
+        }
+        dataOut[i+offset] = dd;
+    }
+}
 `
 
-var KernelNames = []string{"cmplx_mul", "compress_cmplx", "cmplx_transpose", "finaltwiddlefact", "hermitian2full", "multwiddlefact", "pack_cmplx"}
+var KernelNames = []string{"cmplx_mul", "compress_cmplx", "cmplx_transpose", "finaltwiddlefact", "hermitian2full", "multwiddlefact", "pack_cmplx", "vartwiddlefa"}
 
 func createOclFFTProgram(ctx *Context) (*Program, error) {
 	return ctx.CreateProgramWithSource([]string{oclFFTKernelSrc})
