@@ -7,8 +7,6 @@ package cl
 import (
 	"C"
 	"fmt"
-)
-import (
 	"log"
 )
 
@@ -21,15 +19,20 @@ import (
 // )
 
 //////// Wrapper to allow function pointers ////////
+
+//OclFFTFuncs Collections of functions to be executed
 type OclFFTFuncs struct {
 	ExecFunc func(dst, src *MemObject) error
 }
 
+//Exec Execute functions in the map
 func (p *OclFFTFuncs) Exec(dst, src *MemObject) error {
 	return p.ExecFunc(dst, src)
 }
 
 //////// Map data structure for storing kernels in OclFFTPlan struct ////////
+
+//KernelMap Map data structure
 type KernelMap map[string]*Kernel
 
 //////// Data structure for twiddle buffers ////////
@@ -44,11 +47,13 @@ type backwardChirpTwiddles map[int]*chirpArray
 type backwardChirpTwiddlesFFT map[int]*chirpArray
 
 //////// Radices and maximum length supported by clFFT ////////
+
+//supported_radices clFFT supported radices
 var supported_radices = []int{17, 13, 11, 8, 7, 5, 4, 3, 2}
 
 const maxLen int = 128000000
 
-//FftPlanValue Structure to identify the plan for processing
+//FftPlan1DValue Structure to identify the plan for processing
 type FftPlan1DValue struct {
 	IsForw, IsRealHerm, IsSinglePreci, IsBlusteinsReq bool
 	RowDim, ColDim, DepthDim, FinalN                  int
@@ -66,7 +71,14 @@ type FftPlan3DValue struct {
 	RowDim, ColDim, DepthDim, RowBluLeng, ColBluLeng, DepBluLeng                              int
 }
 
+//config kernel launch configuration
+type config struct {
+	Grid, Block []int
+}
+
 //////// Wrapper plan to interface with clFFT ////////
+
+//OclFFTPlan structure to define the oclfftplan
 type OclFFTPlan struct {
 	bake          bool
 	direction     ClFFTDirection
@@ -89,6 +101,7 @@ type OclFFTPlan struct {
 	clDevice      *Device
 	clKernels     KernelMap
 	clProg        *Program
+	FinalBuf      *MemObject
 }
 
 //////// private library functions ////////
@@ -140,6 +153,15 @@ func determineChirpLength(in int) (int, int) {
 
 }
 
+// //sortint Sorting the three lengths for correct assignment
+// func sortint(in1, in2, in3 int) []int {
+// 	temp := make([]int, 3)
+// 	temp[0] = in1
+// 	temp[1] = in2
+// 	temp[2] = in3
+// 	return temp
+// }
+
 // func determineLengthCompatibility(in int) bool {
 // 	var outFlag bool
 // 	outFlag = false
@@ -188,6 +210,46 @@ func (p *OclFFTPlan) setChirp() {
 			}
 		}
 	}
+}
+
+//MakeFinalBuf Get the size of the output buffer
+func (p *OclFFTPlan) makeFinalBuf() error {
+	if p.bake != true {
+		test := p.Bake()
+		if test != nil {
+			return toError(test)
+		}
+	}
+
+	var realherm, forwtru bool
+	if p.GetLayout() == CLFFTLayoutReal || p.GetLayout() == CLFFTLayoutHermitianPlanar || p.GetLayout() == CLFFTLayoutHermitianInterleaved {
+		realherm = true
+	} else {
+		realherm = false
+	}
+
+	if p.GetDirection() == ClFFTDirectionForward {
+		forwtru = true
+	} else {
+		forwtru = false
+	}
+
+	var arrsiz int
+	arrsiz = p.GetLengths()[0] * p.GetLengths()[1] * p.GetLengths()[2]
+
+	//var FinalBuf *MemObject
+	if !forwtru && realherm {
+		p.FinalBuf, _ = p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, arrsiz)
+	} else if forwtru && realherm {
+		p.FinalBuf, _ = p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*(1+arrsiz/2))
+	}
+	if !realherm {
+		p.FinalBuf, _ = p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*arrsiz)
+	}
+	k, _ := p.FinalBuf.GetSize()
+	fmt.Printf("The size of the output buffer is %d", k)
+	return toError(nil)
+
 }
 
 //////// public library functions ////////
@@ -271,7 +333,7 @@ func (p *OclFFTPlan) SetDevice(in *Device) {
 	}
 }
 
-func (p *OclFFTPlan) setProgram() error {
+func (p *OclFFTPlan) SetProgram() error {
 	if p.clCtx == nil || p.clDevice == nil {
 		return toError(nil)
 	}
@@ -330,6 +392,7 @@ func (p *OclFFTPlan) SetResultLocation(in ClFFTResultLocation) {
 	}
 }
 
+//SetLengths Set the dimensions of the given data
 func (p *OclFFTPlan) SetLengths(in [3]int) {
 	if p.fftLengths != in && in[0] > 0 && in[1] > 0 && in[2] > 0 {
 		p.fftLengths = in
@@ -338,6 +401,7 @@ func (p *OclFFTPlan) SetLengths(in [3]int) {
 	}
 }
 
+//SetInStride Set the in stride
 func (p *OclFFTPlan) SetInStride(in [3]int) {
 	if p.inStride != in && in[0] > 0 && in[1] > 0 && in[2] > 0 {
 		p.inStride = in
@@ -345,6 +409,7 @@ func (p *OclFFTPlan) SetInStride(in [3]int) {
 	}
 }
 
+//SetOutStride Set the out stride
 func (p *OclFFTPlan) SetOutStride(in [3]int) {
 	if p.outStride != in && in[0] > 0 && in[1] > 0 && in[2] > 0 {
 		p.outStride = in
@@ -352,6 +417,7 @@ func (p *OclFFTPlan) SetOutStride(in [3]int) {
 	}
 }
 
+//SetInDist Set stride distance for the input
 func (p *OclFFTPlan) SetInDist(in int) {
 	if p.inDist != in && in > 0 {
 		p.inDist = in
@@ -359,6 +425,7 @@ func (p *OclFFTPlan) SetInDist(in int) {
 	}
 }
 
+//SetOutDist Set the out stride distance
 func (p *OclFFTPlan) SetOutDist(in int) {
 	if p.outDist != in && in > 0 {
 		p.outDist = in
@@ -366,6 +433,7 @@ func (p *OclFFTPlan) SetOutDist(in int) {
 	}
 }
 
+//SetBatchCount Set the batch count
 func (p *OclFFTPlan) SetBatchCount(in int) {
 	if p.batches != in && in > 0 {
 		p.batches = in
@@ -373,20 +441,32 @@ func (p *OclFFTPlan) SetBatchCount(in int) {
 	}
 }
 
+//Destroy Destroy the plan
 func (p *OclFFTPlan) Destroy() {
 }
 
+//Bake Bake the plan similar to CLFFT plan
 func (p *OclFFTPlan) Bake() error {
 	p.bake = true
 	return toError(nil)
 }
 
+//ExecTransform Execute transform from the array
 func (p *OclFFTPlan) ExecTransform(dst, src *MemObject) error {
 	if p.bake != true {
 		test := p.Bake()
 		if test != nil {
 			return toError(test)
 		}
+	}
+
+	p.makeFinalBuf()
+	if p.fftLengths[0] > 1 && p.fftLengths[1] > 1 && p.fftLengths[2] > 1 {
+		p.parse3D(src)
+	} else if (p.fftLengths[0] > 1 && p.fftLengths[1] > 1) || (p.fftLengths[0] > 1 && p.fftLengths[2] > 1) || (p.fftLengths[1] > 1 && p.fftLengths[2] > 1) {
+		p.parse2D(src)
+	} else {
+		parse1D(src, p)
 	}
 
 	for _, funcs := range p.exec_sequence {
@@ -399,75 +479,71 @@ func (p *OclFFTPlan) ExecTransform(dst, src *MemObject) error {
 	return toError(nil)
 }
 
+//DeletePlan Delete the plan with option to either retain or delete the registers from the map
+func (p *OclFFTPlan) DeletePlan() {
+
+}
+
+//OclFFTTearDown Function for clearing all the clfft related objects
 func OclFFTTearDown() error {
 	return toError(nil)
 }
 
-// var KernelNames = []string{"cmplx_mul", "compress_cmplx", "cmplx_transpose", "finaltwiddlefact", "hermitian2full", "multwiddlefact", "pack_cmplx"}
-
-// func createOclFFTProgram(ctx *Context) (*Program, error) {
-// 	return ctx.CreateProgramWithSource([]string{oclFFTKernelSrc})
-// }
-
 ////////////////////////     Required Kernel Functions //////////////////////////
 
-//config kernel launch configuration
-type config struct {
-	Grid, Block []int
-}
-
+//divUp
 func divUp(x, y int) int {
 	return ((x - 1) / y) + 1
 }
 
-//PackComplexArray Convert real array to full complex array
-func PackComplexArray(dst, src *MemObject, cnt, iOff, oOff int, pl *OclFFTPlan) {
+//packComplexArray Convert real array to full complex array
+func (p *OclFFTPlan) packComplexArray(dst, src *MemObject, cnt, iOff, oOff int) {
 	var queue *CommandQueue
 	var cfg = &config{Grid: []int{8, 1, 1}, Block: []int{1, 1, 1}}
 	var tmpEventList, tmpEventList1 []*Event
 
-	if pl.GetKernel("pack_cmplx") == nil {
+	if p.GetKernel("pack_cmplx") == nil {
 		log.Panic("Kernel " + "pack_cmplx" + " does not exist!")
 	}
 
-	pl.GetKernel("pack_cmplx").SetArg(0, dst)
-	pl.GetKernel("pack_cmplx").SetArg(1, src)
-	pl.GetKernel("pack_cmplx").SetArg(2, cnt)
-	pl.GetKernel("pack_cmplx").SetArg(3, iOff)
-	pl.GetKernel("pack_cmplx").SetArg(4, oOff)
+	p.GetKernel("pack_cmplx").SetArg(0, dst)
+	p.GetKernel("pack_cmplx").SetArg(1, src)
+	p.GetKernel("pack_cmplx").SetArg(2, cnt)
+	p.GetKernel("pack_cmplx").SetArg(3, iOff)
+	p.GetKernel("pack_cmplx").SetArg(4, oOff)
 
-	KernEvent, err := queue.EnqueueNDRangeKernel(pl.GetKernel("pack_cmplx"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, err := queue.EnqueueNDRangeKernel(p.GetKernel("pack_cmplx"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	if err != nil {
 		log.Fatal(err)
 	}
 	tmpEventList1 = append(tmpEventList1, KernEvent)
 
 	if err := WaitForEvents(tmpEventList1); err != nil {
-		fmt.Printf("WaitForEvents failed in PackComplexArray: %+v \n", err)
+		fmt.Printf("WaitForEvents failed in packComplexArray: %+v \n", err)
 	}
 
 }
 
-//Hermitian2Full Wrapper for hermitian2full OpenCL kernel, asynchronous.
-func Hermitian2Full(dst, src *MemObject, sz, count int, pl *OclFFTPlan) {
+//hermitian2Full Wrapper for hermitian2full OpenCL kernel, asynchronous.
+func (p *OclFFTPlan) hermitian2Full(dst, src *MemObject, sz, count int) {
 	var queue *CommandQueue
 	var cfg = &config{Grid: []int{8, 1, 1}, Block: []int{1, 1, 1}}
 	var tmpEventList, tmpEventList1 []*Event
 
 	//ClPrefWGSz, err := pl.GetKernel("hermitian2full").PreferredWorkGroupSizeMultiple(pl.GetDevice())
 
-	if pl.GetKernel("hermitian2full") == nil {
+	if p.GetKernel("hermitian2full") == nil {
 		log.Panic("Kernel " + "hermitian2full" + " does not exist!")
 	}
 
-	pl.GetKernel("hermitian2full").SetArg(0, dst)
-	pl.GetKernel("hermitian2full").SetArg(1, src)
-	pl.GetKernel("hermitian2full").SetArg(2, sz)
-	pl.GetKernel("hermitian2full").SetArg(3, count)
-	pl.GetKernel("hermitian2full").SetArgUnsafe(4, cfg.Block[0]*cfg.Block[1]*cfg.Block[2]*4, nil)
-	pl.GetKernel("hermitian2full").SetArgUnsafe(5, cfg.Block[0]*cfg.Block[1]*cfg.Block[2]*4, nil)
+	p.GetKernel("hermitian2full").SetArg(0, dst)
+	p.GetKernel("hermitian2full").SetArg(1, src)
+	p.GetKernel("hermitian2full").SetArg(2, sz)
+	p.GetKernel("hermitian2full").SetArg(3, count)
+	p.GetKernel("hermitian2full").SetArgUnsafe(4, cfg.Block[0]*cfg.Block[1]*cfg.Block[2]*4, nil)
+	p.GetKernel("hermitian2full").SetArgUnsafe(5, cfg.Block[0]*cfg.Block[1]*cfg.Block[2]*4, nil)
 
-	KernEvent, err := queue.EnqueueNDRangeKernel(pl.GetKernel("hermitian2full"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, err := queue.EnqueueNDRangeKernel(p.GetKernel("hermitian2full"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -478,8 +554,8 @@ func Hermitian2Full(dst, src *MemObject, sz, count int, pl *OclFFTPlan) {
 	}
 }
 
-//PartAProcess To preprocess the input data and extend it
-func PartAProcess(dst, src *MemObject, originalLeng, extendedLeng, fftDirection, offset int, pl *OclFFTPlan) {
+//partAProcess To preprocess the input data and extend it
+func (p *OclFFTPlan) partAProcess(dst, src *MemObject, originalLeng, extendedLeng, fftDirection, offset int) {
 	//util.Argument(dst.NComp() == src.NComp())
 	var queue *CommandQueue
 	var cfg *config
@@ -487,35 +563,35 @@ func PartAProcess(dst, src *MemObject, originalLeng, extendedLeng, fftDirection,
 	// ClPrefWGSz, err := pl.GetKernel("hermitian2full").PreferredWorkGroupSizeMultiple(pl.GetDevice())
 	// ClCUnits := pl.GetDevice().MaxComputeUnits()
 	bl := make([]int, 1)
-	bl[0], _ = pl.GetKernel("vartwiddlefa").PreferredWorkGroupSizeMultiple(pl.GetDevice())
+	bl[0], _ = p.GetKernel("vartwiddlefa").PreferredWorkGroupSizeMultiple(p.GetDevice())
 	gr := make([]int, 1)
-	gr[0] = bl[0] * pl.GetDevice().MaxComputeUnits()
+	gr[0] = bl[0] * p.GetDevice().MaxComputeUnits()
 	cfg = &config{Grid: gr, Block: bl}
 	//cfg := make1DConf(extendedLeng)
 
 	var tmpEventList, tmpEventList1 []*Event
 
-	if pl.GetKernel("vartwiddlefa") == nil {
+	if p.GetKernel("vartwiddlefa") == nil {
 		log.Panic("Kernel " + "vartwiddlefa" + " does not exist!")
 	}
 
-	pl.GetKernel("vartwiddlefa").SetArg(0, dst)
-	pl.GetKernel("vartwiddlefa").SetArg(1, src)
-	pl.GetKernel("vartwiddlefa").SetArg(2, originalLeng)
-	pl.GetKernel("vartwiddlefa").SetArg(3, extendedLeng)
-	pl.GetKernel("vartwiddlefa").SetArg(4, fftDirection)
-	pl.GetKernel("vartwiddlefa").SetArg(5, offset)
+	p.GetKernel("vartwiddlefa").SetArg(0, dst)
+	p.GetKernel("vartwiddlefa").SetArg(1, src)
+	p.GetKernel("vartwiddlefa").SetArg(2, originalLeng)
+	p.GetKernel("vartwiddlefa").SetArg(3, extendedLeng)
+	p.GetKernel("vartwiddlefa").SetArg(4, fftDirection)
+	p.GetKernel("vartwiddlefa").SetArg(5, offset)
 
-	KernEvent, _ := queue.EnqueueNDRangeKernel(pl.GetKernel("vartwiddlefa"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, _ := queue.EnqueueNDRangeKernel(p.GetKernel("vartwiddlefa"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	tmpEventList1 = append(tmpEventList1, KernEvent)
 
 	if err := WaitForEvents(tmpEventList1); err != nil {
-		fmt.Printf("WaitForEvents failed in PartAProcess: %+v \n", err)
+		fmt.Printf("WaitForEvents failed in partAProcess: %+v \n", err)
 	}
 }
 
-//PartBTwidFac Calculating the twiddle factor for multiplication
-func PartBTwidFac(dst *MemObject, originalLeng, extendedLeng, fftDirection, offset int, pl *OclFFTPlan) {
+//partBTwidFac Calculating the twiddle factor for multiplication
+func (p *OclFFTPlan) partBTwidFac(dst *MemObject, originalLeng, extendedLeng, fftDirection, offset int) {
 
 	var queue *CommandQueue
 	var cfg *config
@@ -523,25 +599,25 @@ func PartBTwidFac(dst *MemObject, originalLeng, extendedLeng, fftDirection, offs
 	// ClPrefWGSz, err := pl.GetKernel("hermitian2full").PreferredWorkGroupSizeMultiple(pl.GetDevice())
 	// ClCUnits := pl.GetDevice().MaxComputeUnits()
 	bl := make([]int, 1)
-	bl[0], _ = pl.GetKernel("multwiddlefact").PreferredWorkGroupSizeMultiple(pl.GetDevice())
+	bl[0], _ = p.GetKernel("multwiddlefact").PreferredWorkGroupSizeMultiple(p.GetDevice())
 	gr := make([]int, 1)
-	gr[0] = bl[0] * pl.GetDevice().MaxComputeUnits()
+	gr[0] = bl[0] * p.GetDevice().MaxComputeUnits()
 	cfg = &config{Grid: gr, Block: bl}
 	//cfg := make1DConf(extendedLeng)
 
 	var tmpEventList, tmpEventList1 []*Event
 
-	if pl.GetKernel("multwiddlefact") == nil {
+	if p.GetKernel("multwiddlefact") == nil {
 		log.Panic("Kernel " + "multwiddlefact" + " does not exist!")
 	}
 
-	pl.GetKernel("multwiddlefact").SetArg(0, dst)
-	pl.GetKernel("multwiddlefact").SetArg(1, originalLeng)
-	pl.GetKernel("multwiddlefact").SetArg(2, extendedLeng)
-	pl.GetKernel("multwiddlefact").SetArg(3, fftDirection)
-	pl.GetKernel("multwiddlefact").SetArg(4, offset)
+	p.GetKernel("multwiddlefact").SetArg(0, dst)
+	p.GetKernel("multwiddlefact").SetArg(1, originalLeng)
+	p.GetKernel("multwiddlefact").SetArg(2, extendedLeng)
+	p.GetKernel("multwiddlefact").SetArg(3, fftDirection)
+	p.GetKernel("multwiddlefact").SetArg(4, offset)
 
-	KernEvent, _ := queue.EnqueueNDRangeKernel(pl.GetKernel("multwiddlefact"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, _ := queue.EnqueueNDRangeKernel(p.GetKernel("multwiddlefact"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	tmpEventList1 = append(tmpEventList1, KernEvent)
 
 	if err := WaitForEvents(tmpEventList1); err != nil {
@@ -549,30 +625,30 @@ func PartBTwidFac(dst *MemObject, originalLeng, extendedLeng, fftDirection, offs
 	}
 }
 
-//FinalMulTwid Final Twiddle Factor to multiply the
-func FinalMulTwid(dst *MemObject, originalLeng, extendedLeng, fftDirection, offset int, pl *OclFFTPlan) {
+//finalMulTwid Final Twiddle Factor to multiply the
+func (p *OclFFTPlan) finalMulTwid(dst *MemObject, originalLeng, extendedLeng, fftDirection, offset int) {
 	var queue *CommandQueue
 
 	var cfg *config
 	bl := make([]int, 1)
-	bl[0], _ = pl.GetKernel("finaltwiddlefact").PreferredWorkGroupSizeMultiple(pl.GetDevice())
+	bl[0], _ = p.GetKernel("finaltwiddlefact").PreferredWorkGroupSizeMultiple(p.GetDevice())
 	gr := make([]int, 1)
-	gr[0] = bl[0] * pl.GetDevice().MaxComputeUnits()
+	gr[0] = bl[0] * p.GetDevice().MaxComputeUnits()
 	cfg = &config{Grid: gr, Block: bl}
 
 	var tmpEventList, tmpEventList1 []*Event
 
-	if pl.GetKernel("finaltwiddlefact") == nil {
+	if p.GetKernel("finaltwiddlefact") == nil {
 		log.Panic("Kernel " + "finaltwiddlefact" + " does not exist!")
 	}
 
-	pl.GetKernel("finaltwiddlefact").SetArg(0, dst)
-	pl.GetKernel("finaltwiddlefact").SetArg(1, originalLeng)
-	pl.GetKernel("finaltwiddlefact").SetArg(2, extendedLeng)
-	pl.GetKernel("finaltwiddlefact").SetArg(3, fftDirection)
-	pl.GetKernel("finaltwiddlefact").SetArg(4, offset)
+	p.GetKernel("finaltwiddlefact").SetArg(0, dst)
+	p.GetKernel("finaltwiddlefact").SetArg(1, originalLeng)
+	p.GetKernel("finaltwiddlefact").SetArg(2, extendedLeng)
+	p.GetKernel("finaltwiddlefact").SetArg(3, fftDirection)
+	p.GetKernel("finaltwiddlefact").SetArg(4, offset)
 
-	KernEvent, _ := queue.EnqueueNDRangeKernel(pl.GetKernel("finaltwiddlefact"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, _ := queue.EnqueueNDRangeKernel(p.GetKernel("finaltwiddlefact"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	tmpEventList1 = append(tmpEventList1, KernEvent)
 
 	if err := WaitForEvents(tmpEventList1); err != nil {
@@ -580,8 +656,8 @@ func FinalMulTwid(dst *MemObject, originalLeng, extendedLeng, fftDirection, offs
 	}
 }
 
-//ComplexMatrixTranspose Tranpose Complex matrix transpose
-func ComplexMatrixTranspose(dst, src *MemObject, offset, width, height int, pl *OclFFTPlan) {
+//complexMatrixTranspose Tranpose Complex matrix transpose
+func (p *OclFFTPlan) complexMatrixTranspose(dst, src *MemObject, offset, width, height int) {
 	var queue *CommandQueue
 
 	var cfg *config
@@ -597,17 +673,17 @@ func ComplexMatrixTranspose(dst, src *MemObject, offset, width, height int, pl *
 
 	var tmpEventList, tmpEventList1 []*Event
 
-	if pl.GetKernel("cmplx_transpose") == nil {
+	if p.GetKernel("cmplx_transpose") == nil {
 		log.Panic("Kernel " + "cmplx_transpose" + " does not exist!")
 	}
 
-	pl.GetKernel("cmplx_transpose").SetArg(0, dst)
-	pl.GetKernel("cmplx_transpose").SetArg(1, src)
-	pl.GetKernel("cmplx_transpose").SetArg(2, offset)
-	pl.GetKernel("cmplx_transpose").SetArg(3, width)
-	pl.GetKernel("cmplx_transpose").SetArg(4, height)
+	p.GetKernel("cmplx_transpose").SetArg(0, dst)
+	p.GetKernel("cmplx_transpose").SetArg(1, src)
+	p.GetKernel("cmplx_transpose").SetArg(2, offset)
+	p.GetKernel("cmplx_transpose").SetArg(3, width)
+	p.GetKernel("cmplx_transpose").SetArg(4, height)
 
-	KernEvent, _ := queue.EnqueueNDRangeKernel(pl.GetKernel("cmplx_transpose"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, _ := queue.EnqueueNDRangeKernel(p.GetKernel("cmplx_transpose"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	tmpEventList1 = append(tmpEventList1, KernEvent)
 
 	if err := WaitForEvents(tmpEventList1); err != nil {
@@ -615,24 +691,24 @@ func ComplexMatrixTranspose(dst, src *MemObject, offset, width, height int, pl *
 	}
 }
 
-//CompressCmplxtoReal Convert complex output of iverse hermitian to real
-func CompressCmplxtoReal(dst, src *MemObject, cnt, iOff, oOff int, pl *OclFFTPlan) {
+//compressCmplxtoReal Convert complex output of iverse hermitian to real
+func (p *OclFFTPlan) compressCmplxtoReal(dst, src *MemObject, cnt, iOff, oOff int) {
 
 	var queue *CommandQueue
 	var cfg = &config{Grid: []int{8, 1, 1}, Block: []int{1, 1, 1}}
 	var tmpEventList, tmpEventList1 []*Event
 
-	if pl.GetKernel("compress_cmplx") == nil {
+	if p.GetKernel("compress_cmplx") == nil {
 		log.Panic("Kernel " + "compress_cmplx" + " does not exist!")
 	}
 
-	pl.GetKernel("compress_cmplx").SetArg(0, dst)
-	pl.GetKernel("compress_cmplx").SetArg(1, src)
-	pl.GetKernel("compress_cmplx").SetArg(2, cnt)
-	pl.GetKernel("compress_cmplx").SetArg(3, iOff)
-	pl.GetKernel("compress_cmplx").SetArg(4, oOff)
+	p.GetKernel("compress_cmplx").SetArg(0, dst)
+	p.GetKernel("compress_cmplx").SetArg(1, src)
+	p.GetKernel("compress_cmplx").SetArg(2, cnt)
+	p.GetKernel("compress_cmplx").SetArg(3, iOff)
+	p.GetKernel("compress_cmplx").SetArg(4, oOff)
 
-	KernEvent, _ := queue.EnqueueNDRangeKernel(pl.GetKernel("compress_cmplx"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, _ := queue.EnqueueNDRangeKernel(p.GetKernel("compress_cmplx"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	tmpEventList1 = append(tmpEventList1, KernEvent)
 
 	if err := WaitForEvents(tmpEventList1); err != nil {
@@ -640,31 +716,31 @@ func CompressCmplxtoReal(dst, src *MemObject, cnt, iOff, oOff int, pl *OclFFTPla
 	}
 }
 
-//ComplexArrayMul Complex array mul
-func ComplexArrayMul(dst, a, b *MemObject, conjB, cnt, offset int, pl *OclFFTPlan) {
+//complexArrayMul Complex array mul
+func (p *OclFFTPlan) complexArrayMul(dst, a, b *MemObject, conjB, cnt, offset int) {
 	var queue *CommandQueue
 
 	var cfg *config
 	bl := make([]int, 1)
-	bl[0], _ = pl.GetKernel("finaltwiddlefact").PreferredWorkGroupSizeMultiple(pl.GetDevice())
+	bl[0], _ = p.GetKernel("finaltwiddlefact").PreferredWorkGroupSizeMultiple(p.GetDevice())
 	gr := make([]int, 1)
-	gr[0] = bl[0] * pl.GetDevice().MaxComputeUnits()
+	gr[0] = bl[0] * p.GetDevice().MaxComputeUnits()
 	cfg = &config{Grid: gr, Block: bl}
 
 	var tmpEventList, tmpEventList1 []*Event
 
-	if pl.GetKernel("cmplx_mul") == nil {
+	if p.GetKernel("cmplx_mul") == nil {
 		log.Panic("Kernel " + "cmplx_mul" + " does not exist!")
 	}
 
-	pl.GetKernel("cmplx_mul").SetArg(0, dst)
-	pl.GetKernel("cmplx_mul").SetArg(1, a)
-	pl.GetKernel("cmplx_mul").SetArg(2, b)
-	pl.GetKernel("cmplx_mul").SetArg(3, conjB)
-	pl.GetKernel("cmplx_mul").SetArg(4, cnt)
-	pl.GetKernel("cmplx_mul").SetArg(4, offset)
+	p.GetKernel("cmplx_mul").SetArg(0, dst)
+	p.GetKernel("cmplx_mul").SetArg(1, a)
+	p.GetKernel("cmplx_mul").SetArg(2, b)
+	p.GetKernel("cmplx_mul").SetArg(3, conjB)
+	p.GetKernel("cmplx_mul").SetArg(4, cnt)
+	p.GetKernel("cmplx_mul").SetArg(5, offset)
 
-	KernEvent, _ := queue.EnqueueNDRangeKernel(pl.GetKernel("cmplx_mul"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, _ := queue.EnqueueNDRangeKernel(p.GetKernel("cmplx_mul"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	tmpEventList1 = append(tmpEventList1, KernEvent)
 
 	if err := WaitForEvents(tmpEventList1); err != nil {
@@ -968,9 +1044,9 @@ func Clfft1D(OutBuf, InBuf *MemObject, N, ScaleLength int, IsReal, IsForw, IsSin
 	//return InputData
 }
 
-//Parse1D Parsing the 1D Input
+//parse1D Parsing the 1D Input
 //func Parse1D(FinalBuf, InpBuf *MemObject, class interface{}) {
-func Parse1D(InpBuf *MemObject, p *OclFFTPlan) {
+func parse1D(InpBuf *MemObject, p *OclFFTPlan) {
 
 	context := p.GetContext()
 	//queue := opencl.ClCmdQueue
@@ -1016,19 +1092,19 @@ func Parse1D(InpBuf *MemObject, p *OclFFTPlan) {
 			fmt.Printf("\n Adjusting length and finding FFT using Blusteins Algorithm with Legnth = %d...\n", inp1d.FinalN)
 		}
 	}
-	var FinalBuf *MemObject
-	if !inp1d.IsForw && inp1d.IsRealHerm {
-		FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, inp1d.RowDim)
-	} else if inp1d.IsForw && inp1d.IsRealHerm {
-		FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, 2*(1+inp1d.RowDim/2))
-	} else {
-		FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, 2*inp1d.RowDim)
-	}
+	// var FinalBuf *MemObject
+	// if !inp1d.IsForw && inp1d.IsRealHerm {
+	// 	FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, inp1d.RowDim)
+	// } else if inp1d.IsForw && inp1d.IsRealHerm {
+	// 	FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, 2*(1+inp1d.RowDim/2))
+	// } else {
+	// 	FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, 2*inp1d.RowDim)
+	// }
 
 	//OutputBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * inp1d.RowDim, 1, 1})
 	//defer opencl.Recycle(OutputBuf)
 
-	FFT1D(FinalBuf, InpBuf, inp1d, context, p)
+	p.fFT1D(p.FinalBuf, InpBuf, inp1d, context)
 
 	fmt.Print("\n Finished calculating 1D FFT. Output will be \n")
 
@@ -1042,8 +1118,8 @@ func Parse1D(InpBuf *MemObject, p *OclFFTPlan) {
 	// PrintArray(OutputBuf, inp1d.RowDim)
 }
 
-//Parse2D Parsing the 2D Input
-func Parse2D(InpBuf *MemObject, p *OclFFTPlan) {
+//parse2D Parsing the 2D Input
+func (p *OclFFTPlan) parse2D(InpBuf *MemObject) {
 
 	fmt.Printf("\n Parsing the 2D input to execute appropriate FFT function...\n")
 	var c FftPlan2DValue
@@ -1059,9 +1135,23 @@ func Parse2D(InpBuf *MemObject, p *OclFFTPlan) {
 		c.IsSinglePreci = false
 	}
 
-	c.RowDim = p.GetLengths()[1]
-	c.ColDim = p.GetLengths()[0]
-	c.DepthDim = p.GetLengths()[2]
+	if p.fftLengths[0] == 1 {
+		c.RowDim = p.fftLengths[1]
+		c.ColDim = p.fftLengths[2]
+		c.DepthDim = p.fftLengths[0]
+	} else if p.fftLengths[1] == 1 {
+		c.RowDim = p.fftLengths[2]
+		c.ColDim = p.fftLengths[0]
+		c.DepthDim = p.fftLengths[1]
+	} else if p.fftLengths[2] == 1 {
+		c.RowDim = p.fftLengths[0]
+		c.ColDim = p.fftLengths[1]
+		c.DepthDim = p.fftLengths[2]
+	}
+
+	// c.RowDim = p.GetLengths()[1]
+	// c.ColDim = p.GetLengths()[0]
+	// c.DepthDim = p.GetLengths()[2]
 
 	context := p.GetContext()
 	//queue := opencl.ClCmdQueue
@@ -1094,23 +1184,23 @@ func Parse2D(InpBuf *MemObject, p *OclFFTPlan) {
 				// TempBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.ColDim * (1 + c.RowDim/2), 1, 1})
 				// defer opencl.Recycle(TempBuf)
 				fmt.Printf("\n Executing Forward Real FFT without Bluestein's ...\n")
-				Clfft2D(FinalBuf, InpBuf, c.RowDim, c.ColDim, true, true, c.IsSinglePreci, context)
+				Clfft2D(p.FinalBuf, InpBuf, c.RowDim, c.ColDim, true, true, c.IsSinglePreci, context)
 
 			} else {
 				//FinalBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.ColDim * c.RowDim, 1, 1})
 				fmt.Printf("\n Executing Forward Complex FFT without Bluestein's ...\n")
-				Clfft2D(FinalBuf, InpBuf, c.RowDim, c.ColDim, false, true, c.IsSinglePreci, context)
+				Clfft2D(p.FinalBuf, InpBuf, c.RowDim, c.ColDim, false, true, c.IsSinglePreci, context)
 			}
 
 		} else {
 			if c.IsRealHerm {
 				fmt.Printf("\n Executing Inverse Hermitian FFT without Bluestein's...\n")
-				Clfft2D(FinalBuf, InpBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci, context)
+				Clfft2D(p.FinalBuf, InpBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci, context)
 
 			} else {
 				//FinalBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.RowDim * c.RowDim, 1, 1})
 				fmt.Printf("\n Executing Inverse Complex FFT without Bluestein's...\n")
-				Clfft2D(FinalBuf, InpBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci, context)
+				Clfft2D(p.FinalBuf, InpBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci, context)
 			}
 		}
 	}
@@ -1152,14 +1242,14 @@ func Parse2D(InpBuf *MemObject, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, InpBuf, 0, j*c.RowDim, c.RowDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*int(1+c.RowDim/2))
 					TempPlan := FftPlan1DValue{true, true, true, c.IsBlusteinsReqRow, c.RowDim, 1, 1, c.RowBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(TempOutBuf, FftBuff, 2*j*int(1+c.RowDim/2), 0, 2*int(1+c.RowDim/2))
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 
 				fmt.Printf("\n Implementing Transpose \n")
-				ComplexMatrixTranspose(TranpoBuf, TempOutBuf, 0, int(1+c.RowDim/2), c.ColDim, p)
+				p.complexMatrixTranspose(TranpoBuf, TempOutBuf, 0, int(1+c.RowDim/2), c.ColDim)
 				fmt.Printf("\n Finished transposing \n")
 
 				SecOutBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*int(1+c.RowDim/2)*c.ColDim)
@@ -1171,13 +1261,13 @@ func Parse2D(InpBuf *MemObject, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, TranpoBuf, 0, 2*j*c.ColDim, 2*c.ColDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.ColDim)
 					TempPlan := FftPlan1DValue{true, false, true, c.IsBlusteinsReqCol, c.ColDim, 1, 1, c.ColBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(SecOutBuf, FftBuff, 2*j*c.ColDim, 0, 2*c.ColDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 				fmt.Printf("\n Implementing Transpose \n")
-				ComplexMatrixTranspose(FinalBuf, SecOutBuf, 0, c.ColDim, int(1+c.RowDim/2), p)
+				p.complexMatrixTranspose(FinalBuf, SecOutBuf, 0, c.ColDim, int(1+c.RowDim/2))
 				fmt.Printf("\n Printing 2d individual output array \n")
 				//PrintArray(FinalBuf, c.RowDim*c.ColDim)
 				TempOutBuf.Release()
@@ -1196,14 +1286,14 @@ func Parse2D(InpBuf *MemObject, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, InpBuf, 0, 2*j*c.RowDim, 2*c.RowDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim)
 					TempPlan := FftPlan1DValue{true, false, true, c.IsBlusteinsReqRow, c.RowDim, 1, 1, c.RowBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(TempOutBuf, FftBuff, 2*j*c.RowDim, 0, 2*c.RowDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 
 				fmt.Printf("\n Implementing Transpose \n")
-				ComplexMatrixTranspose(TranpoBuf, TempOutBuf, 0, c.RowDim, c.ColDim, p)
+				p.complexMatrixTranspose(TranpoBuf, TempOutBuf, 0, c.RowDim, c.ColDim)
 
 				SecOutBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim)
 
@@ -1214,13 +1304,13 @@ func Parse2D(InpBuf *MemObject, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, TranpoBuf, 0, 2*j*c.ColDim, 2*c.ColDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.ColDim)
 					TempPlan := FftPlan1DValue{true, false, true, c.IsBlusteinsReqCol, c.ColDim, 1, 1, c.ColBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(SecOutBuf, FftBuff, 2*j*c.ColDim, 0, 2*c.ColDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 				fmt.Printf("\n Implementing Transpose \n")
-				ComplexMatrixTranspose(FinalBuf, SecOutBuf, 0, c.ColDim, c.RowDim, p)
+				p.complexMatrixTranspose(FinalBuf, SecOutBuf, 0, c.ColDim, c.RowDim)
 				fmt.Printf("\n Printing 2d individual output array \n")
 				//PrintArray(FinalBuf, c.RowDim*c.ColDim)
 				TempOutBuf.Release()
@@ -1242,17 +1332,17 @@ func Parse2D(InpBuf *MemObject, p *OclFFTPlan) {
 				fmt.Printf("\n \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\ First Copy for the %d time ///////////////////", j)
 				TempFftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, c.RowDim)
 				TempPlan := FftPlan1DValue{false, true, true, c.IsBlusteinsReqRow, c.RowDim, 1, 1, c.RowBluLeng}
-				FFT1D(TempFftBuff, SmallBuff, TempPlan, context, p)
+				p.fFT1D(TempFftBuff, SmallBuff, TempPlan, context)
 				FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim)
 				fmt.Printf("\n \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\ FFt for the %d time ///////////////////", j)
-				PackComplexArray(FftBuff, TempFftBuff, c.RowDim, 0, 0, p)
+				p.packComplexArray(FftBuff, TempFftBuff, c.RowDim, 0, 0)
 				MemInputCpyFloat32(TempOutBuf, FftBuff, 2*j*c.RowDim, 0, 2*c.RowDim)
 				SmallBuff.Release()
 				FftBuff.Release()
 				TempFftBuff.Release()
 			}
 			fmt.Printf("\n Implementing Transpose \n")
-			ComplexMatrixTranspose(TranpoBuf, TempOutBuf, 0, c.RowDim, c.ColDim, p)
+			p.complexMatrixTranspose(TranpoBuf, TempOutBuf, 0, c.RowDim, c.ColDim)
 
 			SecOutBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim)
 			//TranpoBuf := opencl.Buffer(NComponents, [3]int{2 * plan2d.RowDim * plan2d.ColDim, 1, 1})
@@ -1262,21 +1352,21 @@ func Parse2D(InpBuf *MemObject, p *OclFFTPlan) {
 				MemInputCpyFloat32(SmallBuff, TranpoBuf, 0, 2*j*c.ColDim, 2*c.ColDim)
 				FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.ColDim)
 				TempPlan := FftPlan1DValue{false, false, true, c.IsBlusteinsReqCol, c.ColDim, 1, 1, c.ColBluLeng}
-				FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+				p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 				MemInputCpyFloat32(SecOutBuf, FftBuff, 2*j*c.ColDim, 0, 2*c.ColDim)
 				SmallBuff.Release()
 				FftBuff.Release()
 			}
 			fmt.Printf("\n Implementing Transpose \n")
 			OutTransTempBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim)
-			ComplexMatrixTranspose(OutTransTempBuff, SecOutBuf, 0, c.ColDim, c.RowDim, p)
+			p.complexMatrixTranspose(OutTransTempBuff, SecOutBuf, 0, c.ColDim, c.RowDim)
 			fmt.Printf("\n Printing 2d individual output array \n")
 			for j := 0; j < c.ColDim; j++ {
 				SmallBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim)
 				MemInputCpyFloat32(SmallBuff, OutTransTempBuff, 0, 2*j*c.RowDim, 2*c.RowDim)
 				fmt.Printf("\n Finished first copy \n")
 				TempCompressBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, c.RowDim)
-				CompressCmplxtoReal(TempCompressBuff, SmallBuff, c.RowDim, 0, 0, p)
+				p.compressCmplxtoReal(TempCompressBuff, SmallBuff, c.RowDim, 0, 0)
 				MemInputCpyFloat32(FinalBuf, TempCompressBuff, j*c.RowDim, 0, c.RowDim)
 				SmallBuff.Release()
 				TempCompressBuff.Release()
@@ -1298,13 +1388,13 @@ func Parse2D(InpBuf *MemObject, p *OclFFTPlan) {
 				MemInputCpyFloat32(SmallBuff, InpBuf, 0, 2*j*c.RowDim, 2*c.RowDim)
 				FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim)
 				TempPlan := FftPlan1DValue{false, false, true, c.IsBlusteinsReqRow, c.RowDim, 1, 1, c.RowBluLeng}
-				FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+				p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 				MemInputCpyFloat32(TempOutBuf, FftBuff, 2*j*c.RowDim, 0, 2*c.RowDim)
 				SmallBuff.Release()
 				FftBuff.Release()
 			}
 			fmt.Printf("\n Implementing Transpose \n")
-			ComplexMatrixTranspose(TranpoBuf, TempOutBuf, 0, c.RowDim, c.ColDim, p)
+			p.complexMatrixTranspose(TranpoBuf, TempOutBuf, 0, c.RowDim, c.ColDim)
 
 			SecOutBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim)
 			//TranpoBuf := opencl.Buffer(NComponents, [3]int{2 * plan2d.RowDim * plan2d.ColDim, 1, 1})
@@ -1314,13 +1404,13 @@ func Parse2D(InpBuf *MemObject, p *OclFFTPlan) {
 				MemInputCpyFloat32(SmallBuff, TranpoBuf, 0, 2*j*c.ColDim, 2*c.ColDim)
 				FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.ColDim)
 				TempPlan := FftPlan1DValue{false, false, true, c.IsBlusteinsReqCol, c.ColDim, 1, 1, c.ColBluLeng}
-				FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+				p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 				MemInputCpyFloat32(SecOutBuf, FftBuff, 2*j*c.ColDim, 0, 2*c.ColDim)
 				SmallBuff.Release()
 				FftBuff.Release()
 			}
 			fmt.Printf("\n Implementing Transpose \n")
-			ComplexMatrixTranspose(FinalBuf, SecOutBuf, 0, c.ColDim, c.RowDim, p)
+			p.complexMatrixTranspose(FinalBuf, SecOutBuf, 0, c.ColDim, c.RowDim)
 			fmt.Printf("\n Printing 2d individual output array \n")
 			//PrintArray(FinalBuf, c.RowDim*c.ColDim)
 			TempOutBuf.Release()
@@ -1338,8 +1428,8 @@ func Parse2D(InpBuf *MemObject, p *OclFFTPlan) {
 	// }
 }
 
-//FFT1D to identify the details about the FFT
-func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl *OclFFTPlan) {
+//fFT1D to identify the details about the FFT
+func (p *OclFFTPlan) fFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context) {
 	var queue *CommandQueue
 	fmt.Printf("\n Parsing the input to execute appropriate FFT function...\n")
 	c, ok := class.(FftPlan1DValue)
@@ -1388,7 +1478,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				PartATempBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim)
 				defer PartATempBuf.Release()
 				fmt.Printf("\n Processing Part A with the twiddle factor \n")
-				PackComplexArray(PartATempBuf, InpBuf, c.RowDim, 0, 0, pl)
+				p.packComplexArray(PartATempBuf, InpBuf, c.RowDim, 0, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1396,7 +1486,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				PartAProcBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartAProcBuf.Release()
 				fmt.Printf("\n Processing Part A with the twiddle factor \n")
-				PartAProcess(PartAProcBuf, PartATempBuf, c.RowDim, c.FinalN, 1, 0, pl)
+				p.partAProcess(PartAProcBuf, PartATempBuf, c.RowDim, c.FinalN, 1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1404,7 +1494,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				PartBBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartBBuf.Release()
 				fmt.Printf("\n Generating part B for Bluesteins")
-				PartBTwidFac(PartBBuf, c.RowDim, c.FinalN, 1, 0, pl)
+				p.partBTwidFac(PartBBuf, c.RowDim, c.FinalN, 1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1421,7 +1511,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				fmt.Printf("\n Multiplying Part A and Part B FFT \n")
 				MulBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer MulBuff.Release()
-				ComplexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, c.FinalN, 0, pl)
+				p.complexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1434,7 +1524,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				fmt.Printf("\n Preparing final twiddle factor")
 				FinTwid, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTwid.Release()
-				FinalMulTwid(FinTwid, c.RowDim, c.FinalN, 1, 0, pl)
+				p.finalMulTwid(FinTwid, c.RowDim, c.FinalN, 1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1443,7 +1533,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 
 				FinTempBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTempBuff.Release()
-				ComplexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, c.FinalN, 0, pl)
+				p.complexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1462,7 +1552,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				PartAProcBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartAProcBuf.Release()
 				fmt.Printf("\n Processing Part A with the twiddle factor \n")
-				PartAProcess(PartAProcBuf, InpBuf, c.RowDim, c.FinalN, 1, 0, pl)
+				p.partAProcess(PartAProcBuf, InpBuf, c.RowDim, c.FinalN, 1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1470,7 +1560,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				PartBBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartBBuf.Release()
 				fmt.Printf("\n Generating part B for Bluesteins")
-				PartBTwidFac(PartBBuf, c.RowDim, c.FinalN, 1, 0, pl)
+				p.partBTwidFac(PartBBuf, c.RowDim, c.FinalN, 1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1489,7 +1579,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				fmt.Printf("\n Multiplying Part A and Part B FFT \n")
 				MulBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer MulBuff.Release()
-				ComplexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, c.FinalN, 0, pl)
+				p.complexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1502,7 +1592,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				fmt.Printf("\n Preparing final twiddle factor")
 				FinTwid, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTwid.Release()
-				FinalMulTwid(FinTwid, c.RowDim, c.FinalN, 1, 0, pl)
+				p.finalMulTwid(FinTwid, c.RowDim, c.FinalN, 1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1510,7 +1600,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				fmt.Printf("\n Multiplying with Final Twiddle Factor")
 				FinTempBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTempBuff.Release()
-				ComplexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, c.FinalN, 0, pl)
+				p.complexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1527,14 +1617,14 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				defer PartABuf.Release()
 
 				fmt.Printf("\n Converting Hermitian to Full Complex of Part A to complex for multiplication with twiddle factor\n")
-				Hermitian2Full(PartABuf, InpBuf, c.FinalN/2, c.RowDim/2, pl)
+				p.hermitian2Full(PartABuf, InpBuf, c.FinalN/2, c.RowDim/2)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 
 				PartAProcBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartAProcBuf.Release()
 				fmt.Printf("\n Processing Part A with the twiddle factor \n")
-				PartAProcess(PartAProcBuf, PartABuf, c.RowDim, c.FinalN, -1, 0, pl)
+				p.partAProcess(PartAProcBuf, PartABuf, c.RowDim, c.FinalN, -1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1542,7 +1632,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				PartBBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartBBuf.Release()
 				fmt.Printf("\n Generating part B for Bluesteins")
-				PartBTwidFac(PartBBuf, c.RowDim, c.FinalN, -1, 0, pl)
+				p.partBTwidFac(PartBBuf, c.RowDim, c.FinalN, -1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1558,7 +1648,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				fmt.Printf("\n Multiplying Part A and Part B FFT \n")
 				MulBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer MulBuff.Release()
-				ComplexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, c.FinalN, 0, pl)
+				p.complexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1571,7 +1661,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				fmt.Printf("\n Preparing final twiddle factor")
 				FinTwid, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTwid.Release()
-				FinalMulTwid(FinTwid, c.RowDim, c.FinalN, -1, 0, pl)
+				p.finalMulTwid(FinTwid, c.RowDim, c.FinalN, -1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1579,13 +1669,13 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				fmt.Printf("\n Multiplying with Final Twiddle Factor")
 				FinTempBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTempBuff.Release()
-				ComplexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, c.FinalN, 0, pl)
+				p.complexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Converting the array to required length \n")
-				CompressCmplxtoReal(FinalBuf, FinTempBuff, c.RowDim, 0, 0, pl)
+				p.compressCmplxtoReal(FinalBuf, FinTempBuff, c.RowDim, 0, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1598,7 +1688,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				PartAProcBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartAProcBuf.Release()
 				fmt.Printf("\n Processing Part A with the twiddle factor \n")
-				PartAProcess(PartAProcBuf, InpBuf, c.RowDim, c.FinalN, -1, 0, pl)
+				p.partAProcess(PartAProcBuf, InpBuf, c.RowDim, c.FinalN, -1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1606,7 +1696,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				PartBBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartBBuf.Release()
 				fmt.Printf("\n Generating part B for Bluesteins")
-				PartBTwidFac(PartBBuf, c.RowDim, c.FinalN, -1, 0, pl)
+				p.partBTwidFac(PartBBuf, c.RowDim, c.FinalN, -1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1624,7 +1714,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				fmt.Printf("\n Multiplying Part A and Part B FFT \n")
 				MulBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer MulBuff.Release()
-				ComplexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, c.FinalN, 0, pl)
+				p.complexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1636,7 +1726,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 
 				fmt.Printf("\n Preparing final twiddle factor")
 				FinTwid, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
-				FinalMulTwid(FinTwid, c.RowDim, c.FinalN, -1, 0, pl)
+				p.finalMulTwid(FinTwid, c.RowDim, c.FinalN, -1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1644,7 +1734,7 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 				fmt.Printf("\n Multiplying with Final Twiddle Factor")
 				FinTempBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTempBuff.Release()
-				ComplexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, c.FinalN, 0, pl)
+				p.complexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				queue.Finish()
 				fmt.Println("\n Execution finished.")
@@ -1658,8 +1748,8 @@ func FFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context, pl 
 	}
 }
 
-//Parse3D Parsing the 3D Input
-func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
+//parse3D Parsing the 3D Input
+func (p *OclFFTPlan) parse3D(InpBuf *MemObject) {
 
 	fmt.Printf("\n Parsing the input to execute appropriate FFT function...\n")
 
@@ -1791,14 +1881,14 @@ func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, InpBuf, 0, j*c.RowDim, c.RowDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*int(1+c.RowDim/2))
 					TempPlan := FftPlan1DValue{true, true, true, c.IsBlusteinsReqRow, c.RowDim, 1, 1, c.RowBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(TempOutBuf, FftBuff, 2*j*int(1+c.RowDim/2), 0, 2*int(1+c.RowDim/2))
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 
 				fmt.Printf("\n Implementing Transpose \n")
-				ComplexMatrixTranspose(TranpoBuf, TempOutBuf, 0, int(1+c.RowDim/2), c.ColDim*c.DepthDim, p)
+				p.complexMatrixTranspose(TranpoBuf, TempOutBuf, 0, int(1+c.RowDim/2), c.ColDim*c.DepthDim)
 				fmt.Printf("\n +++++++++++++++++++ Finished transposing for first dimension +++++++++++++++++ \n")
 
 				SecOutBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*int(1+c.RowDim/2)*c.ColDim*c.DepthDim)
@@ -1811,13 +1901,13 @@ func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, TranpoBuf, 0, 2*j*c.ColDim, 2*c.ColDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.ColDim)
 					TempPlan := FftPlan1DValue{true, false, true, c.IsBlusteinsReqCol, c.ColDim, 1, 1, c.ColBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(SecOutBuf, FftBuff, 2*j*c.ColDim, 0, 2*c.ColDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 				fmt.Printf("\n Implementing Transpose \n")
-				ComplexMatrixTranspose(SecTrnBuf, SecOutBuf, 0, c.ColDim, int(1+c.RowDim/2)*c.DepthDim, p)
+				p.complexMatrixTranspose(SecTrnBuf, SecOutBuf, 0, c.ColDim, int(1+c.RowDim/2)*c.DepthDim)
 				fmt.Printf("\n +++++++++++++++++++++++++++ Finished transpose for second dimension +++++++++++++++++ \n")
 
 				TerOutBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*int(1+c.RowDim/2)*c.ColDim*c.DepthDim)
@@ -1829,13 +1919,13 @@ func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, SecTrnBuf, 0, 2*j*c.DepthDim, 2*c.DepthDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.DepthDim)
 					TempPlan := FftPlan1DValue{true, false, true, c.IsBlusteinReqDep, c.DepthDim, 1, 1, c.DepBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(TerOutBuf, FftBuff, 2*j*c.DepthDim, 0, 2*c.DepthDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 				fmt.Printf("\n Implementing Transpose \n")
-				ComplexMatrixTranspose(FinalBuf, TerOutBuf, 0, c.DepthDim, int(1+c.RowDim/2)*c.ColDim, p)
+				p.complexMatrixTranspose(FinalBuf, TerOutBuf, 0, c.DepthDim, int(1+c.RowDim/2)*c.ColDim)
 				fmt.Printf("\n +++++++++++++++++++++++++++ Finished transpose for third dimension +++++++++++++++++ \n")
 
 				//PrintArray(FinalBuf, c.RowDim*c.ColDim)
@@ -1858,14 +1948,14 @@ func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, InpBuf, 0, 2*j*c.RowDim, 2*c.RowDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim)
 					TempPlan := FftPlan1DValue{true, false, true, c.IsBlusteinsReqRow, c.RowDim, 1, 1, c.RowBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(TempOutBuf, FftBuff, 2*j*c.RowDim, 0, 2*c.RowDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 
 				fmt.Printf("\n Implementing Transpose \n")
-				ComplexMatrixTranspose(TranpoBuf, TempOutBuf, 0, c.RowDim, c.ColDim*c.DepthDim, p)
+				p.complexMatrixTranspose(TranpoBuf, TempOutBuf, 0, c.RowDim, c.ColDim*c.DepthDim)
 				fmt.Printf("\n +++++++++++++++++++++++++++ Finished transpose for first dimension +++++++++++++++++ \n")
 
 				SecOutBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim*c.DepthDim)
@@ -1878,13 +1968,13 @@ func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, TranpoBuf, 0, 2*j*c.ColDim, 2*c.ColDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.ColDim)
 					TempPlan := FftPlan1DValue{true, false, true, c.IsBlusteinsReqCol, c.ColDim, 1, 1, c.ColBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(SecOutBuf, FftBuff, 2*j*c.ColDim, 0, 2*c.ColDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 				fmt.Printf("\n Implementing Transpose \n")
-				ComplexMatrixTranspose(SecTrnBuf, SecOutBuf, 0, c.ColDim, c.RowDim*c.DepthDim, p)
+				p.complexMatrixTranspose(SecTrnBuf, SecOutBuf, 0, c.ColDim, c.RowDim*c.DepthDim)
 				fmt.Printf("\n +++++++++++++++++++++++++++ Finished transpose for second dimension +++++++++++++++++ \n")
 
 				TerOutBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim*c.DepthDim)
@@ -1896,13 +1986,13 @@ func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, SecTrnBuf, 0, 2*j*c.DepthDim, 2*c.DepthDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.DepthDim)
 					TempPlan := FftPlan1DValue{true, false, true, c.IsBlusteinReqDep, c.DepthDim, 1, 1, c.DepBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(TerOutBuf, FftBuff, 2*j*c.DepthDim, 0, 2*c.DepthDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 				fmt.Printf("\n Implementing Transpose \n")
-				ComplexMatrixTranspose(FinalBuf, TerOutBuf, 0, c.DepthDim, c.RowDim*c.ColDim, p)
+				p.complexMatrixTranspose(FinalBuf, TerOutBuf, 0, c.DepthDim, c.RowDim*c.ColDim)
 				fmt.Printf("\n +++++++++++++++++++++++++++ Finished transpose for third dimension +++++++++++++++++ \n")
 
 				//PrintArray(FinalBuf, c.RowDim*c.ColDim)
@@ -1927,16 +2017,16 @@ func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, InpBuf, 0, 2*j*int(1+c.RowDim/2), 2*int(1+c.RowDim/2))
 					TempFftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, c.RowDim)
 					TempPlan := FftPlan1DValue{false, true, true, c.IsBlusteinsReqRow, c.RowDim, 1, 1, c.RowBluLeng}
-					FFT1D(TempFftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(TempFftBuff, SmallBuff, TempPlan, context)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim)
-					PackComplexArray(FftBuff, TempFftBuff, c.RowDim, 0, 0, p)
+					p.packComplexArray(FftBuff, TempFftBuff, c.RowDim, 0, 0)
 					MemInputCpyFloat32(TempOutBuf, FftBuff, 2*j*c.RowDim, 0, 2*c.RowDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 					TempFftBuff.Release()
 				}
 
-				ComplexMatrixTranspose(TranpoBuf, TempOutBuf, 0, c.RowDim, c.ColDim*c.DepthDim, p)
+				p.complexMatrixTranspose(TranpoBuf, TempOutBuf, 0, c.RowDim, c.ColDim*c.DepthDim)
 				fmt.Printf("\n +++++++++++++++++++++++++++ Finished transpose for first dimension +++++++++++++++++ \n")
 
 				SecOutBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim*c.DepthDim)
@@ -1948,13 +2038,13 @@ func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, TranpoBuf, 0, 2*j*c.ColDim, 2*c.ColDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.ColDim)
 					TempPlan := FftPlan1DValue{false, false, true, c.IsBlusteinsReqCol, c.ColDim, 1, 1, c.ColBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(SecOutBuf, FftBuff, 2*j*c.ColDim, 0, 2*c.ColDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 
-				ComplexMatrixTranspose(SecTrnBuf, SecOutBuf, 0, c.ColDim, c.RowDim*c.DepthDim, p)
+				p.complexMatrixTranspose(SecTrnBuf, SecOutBuf, 0, c.ColDim, c.RowDim*c.DepthDim)
 				fmt.Printf("\n +++++++++++++++++++++++++++ Finished transpose for second dimension +++++++++++++++++ \n")
 
 				//PrintArray(FinalBuf, c.RowDim*c.ColDim)
@@ -1968,14 +2058,14 @@ func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, SecTrnBuf, 0, 2*j*c.DepthDim, 2*c.DepthDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.DepthDim)
 					TempPlan := FftPlan1DValue{false, false, true, c.IsBlusteinReqDep, c.DepthDim, 1, 1, c.DepBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(TerOutBuf, FftBuff, 2*j*c.DepthDim, 0, 2*c.DepthDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 
 				OutTransTempBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim*c.DepthDim)
-				ComplexMatrixTranspose(OutTransTempBuff, TerOutBuf, 0, c.DepthDim, c.RowDim*c.DepthDim, p)
+				p.complexMatrixTranspose(OutTransTempBuff, TerOutBuf, 0, c.DepthDim, c.RowDim*c.DepthDim)
 				fmt.Printf("\n +++++++++++++++++++++++++++ Finished transpose for third dimension +++++++++++++++++ \n")
 
 				fmt.Printf("\n Printing 3d individual output array \n")
@@ -1984,7 +2074,7 @@ func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, OutTransTempBuff, 0, 2*j*c.RowDim, 2*c.RowDim)
 					//fmt.Printf("\n Finished first copy \n")
 					TempCompressBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, c.RowDim)
-					CompressCmplxtoReal(TempCompressBuff, SmallBuff, c.RowDim, 0, 0, p)
+					p.compressCmplxtoReal(TempCompressBuff, SmallBuff, c.RowDim, 0, 0)
 					MemInputCpyFloat32(FinalBuf, TempCompressBuff, j*c.RowDim, 0, c.RowDim)
 					SmallBuff.Release()
 					TempCompressBuff.Release()
@@ -2009,14 +2099,14 @@ func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, InpBuf, 0, 2*j*c.RowDim, 2*c.RowDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim)
 					TempPlan := FftPlan1DValue{false, false, true, c.IsBlusteinsReqRow, c.RowDim, 1, 1, c.RowBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(TempOutBuf, FftBuff, 2*j*c.RowDim, 0, 2*c.RowDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 
 				fmt.Printf("\n Implementing Transpose \n")
-				ComplexMatrixTranspose(TranpoBuf, TempOutBuf, 0, c.RowDim, c.ColDim*c.DepthDim, p)
+				p.complexMatrixTranspose(TranpoBuf, TempOutBuf, 0, c.RowDim, c.ColDim*c.DepthDim)
 				fmt.Printf("\n Finished transposing \n")
 
 				SecOutBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim*c.DepthDim)
@@ -2029,13 +2119,13 @@ func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, TranpoBuf, 0, 2*j*c.ColDim, 2*c.ColDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.ColDim)
 					TempPlan := FftPlan1DValue{false, false, true, c.IsBlusteinsReqCol, c.ColDim, 1, 1, c.ColBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(SecOutBuf, FftBuff, 2*j*c.ColDim, 0, 2*c.ColDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 				fmt.Printf("\n Implementing Transpose \n")
-				ComplexMatrixTranspose(SecTrnBuf, SecOutBuf, 0, c.ColDim, c.RowDim*c.DepthDim, p)
+				p.complexMatrixTranspose(SecTrnBuf, SecOutBuf, 0, c.ColDim, c.RowDim*c.DepthDim)
 				fmt.Printf("\n Printing 2d individual output array \n")
 
 				TerOutBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim*c.DepthDim)
@@ -2047,13 +2137,13 @@ func Parse3D(InpBuf *MemObject, class interface{}, p *OclFFTPlan) {
 					MemInputCpyFloat32(SmallBuff, SecTrnBuf, 0, 2*j*c.DepthDim, 2*c.DepthDim)
 					FftBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.DepthDim)
 					TempPlan := FftPlan1DValue{false, false, true, c.IsBlusteinReqDep, c.DepthDim, 1, 1, c.DepBluLeng}
-					FFT1D(FftBuff, SmallBuff, TempPlan, context, p)
+					p.fFT1D(FftBuff, SmallBuff, TempPlan, context)
 					MemInputCpyFloat32(TerOutBuf, FftBuff, 2*j*c.DepthDim, 0, 2*c.DepthDim)
 					SmallBuff.Release()
 					FftBuff.Release()
 				}
 				fmt.Printf("\n Implementing Transpose \n")
-				ComplexMatrixTranspose(FinalBuf, TerOutBuf, 0, c.DepthDim, c.RowDim*c.ColDim, p)
+				p.complexMatrixTranspose(FinalBuf, TerOutBuf, 0, c.DepthDim, c.RowDim*c.ColDim)
 				fmt.Printf("\n Printing 2d individual output array \n")
 
 				//PrintArray(FinalBuf, c.RowDim*c.ColDim)
