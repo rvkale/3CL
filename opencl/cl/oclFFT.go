@@ -8,6 +8,7 @@ import (
 	"C"
 	"fmt"
 	"log"
+	"strconv"
 )
 
 // var (
@@ -30,21 +31,43 @@ func (p *OclFFTFuncs) Exec(dst, src *MemObject) error {
 	return p.ExecFunc(dst, src)
 }
 
+//////Additional Variables Required
+//var ClCmdQueue *CommandQueue
+
 //////// Map data structure for storing kernels in OclFFTPlan struct ////////
 
 //KernelMap Map data structure
 type KernelMap map[string]*Kernel
 
 //////// Data structure for twiddle buffers ////////
-type chirpArray []int
+type chirpArray map[string]int
+
+//PlanList Complete list and count of all the maps created. If a plan is deleted, the number is reduced.
+var PlanList chirpArray
+
+// type chirpArray [string]*MemObject
+
+// type chirpArray map[string]*MemObject
 
 //////// Map data structure for storing twiddle buffers for Bluesteins ////////
-type forwardChirpTwiddles map[int]*chirpArray
-type forwardChirpTwiddlesFFT map[int]*chirpArray
+//type forwardChirpTwiddles map[int]*chirpArray
+//type forwardChirpTwiddles map[string]*chirpArray
+type forwardChirpTwiddles map[string]*MemObject
+
+var frchtw forwardChirpTwiddles
+
+type forwardChirpTwiddlesFFT map[string]*chirpArray
+
+var frchtwff forwardChirpTwiddlesFFT
 
 //////// Map data structure for storing twiddle buffers for Bluesteins ////////
-type backwardChirpTwiddles map[int]*chirpArray
-type backwardChirpTwiddlesFFT map[int]*chirpArray
+type backwardChirpTwiddles map[string]*chirpArray
+
+var bwchtw backwardChirpTwiddles
+
+type backwardChirpTwiddlesFFT map[string]*chirpArray
+
+var bwchtwff backwardChirpTwiddlesFFT
 
 //////// Radices and maximum length supported by clFFT ////////
 
@@ -69,6 +92,10 @@ type FftPlan2DValue struct {
 type FftPlan3DValue struct {
 	IsForw, IsRealHerm, IsSinglePreci, IsBlusteinsReqRow, IsBlusteinsReqCol, IsBlusteinReqDep bool
 	RowDim, ColDim, DepthDim, RowBluLeng, ColBluLeng, DepBluLeng                              int
+}
+type id_key struct {
+	key_set_flag bool
+	key_val      string
 }
 
 //config kernel launch configuration
@@ -101,8 +128,18 @@ type OclFFTPlan struct {
 	clDevice      *Device
 	clKernels     KernelMap
 	clProg        *Program
+	clCmdQueue    *CommandQueue
 	FinalBuf      *MemObject
+	plan_key      id_key
 }
+
+/////////Map and count of plans available///////
+
+type planmap map[string]*OclFFTPlan
+
+var typical planmap
+
+// planmap := make(map[string]*OclFFTPlan)
 
 //////// private library functions ////////
 func createOclFFTPlan() *OclFFTPlan {
@@ -197,6 +234,14 @@ func determineChirpLength(in int) (int, int) {
 // 	return outLength
 // }
 
+//generateKey Generate the correct key and store in the map
+func (p *OclFFTPlan) generateKey() {
+	tempkey := strconv.Itoa(p.GetLengths()[0]) + "x" + strconv.Itoa(p.GetLengths()[1]) + "x" + strconv.Itoa(p.GetLengths()[2])
+	p.plan_key.key_val = tempkey + "x" + strconv.Itoa(PlanList[tempkey])
+	p.plan_key.key_set_flag = true
+}
+
+//setChirp Set the chirp length
 func (p *OclFFTPlan) setChirp() {
 	for ind, dimLen := range p.fftLengths {
 		if dimLen > 1 {
@@ -398,6 +443,16 @@ func (p *OclFFTPlan) SetLengths(in [3]int) {
 		p.fftLengths = in
 		p.bake = false
 		p.setChirp()
+		if p.plan_key.key_set_flag == true {
+			fmt.Printf("\n Deleting Keys") //delete other keys
+		}
+		tempkey := strconv.Itoa(in[0]) + "x" + strconv.Itoa(in[1]) + "x" + strconv.Itoa(in[2])
+		j, found := PlanList[tempkey]
+		if found == true {
+			PlanList[tempkey] = j + 1
+		} else {
+			PlanList[tempkey] = 1
+		}
 	}
 }
 
@@ -469,6 +524,8 @@ func (p *OclFFTPlan) ExecTransform(dst, src *MemObject) error {
 		parse1D(src, p)
 	}
 
+	p.generateKey()
+
 	for _, funcs := range p.exec_sequence {
 		test := funcs.Exec(dst, src)
 		if test != nil {
@@ -480,12 +537,30 @@ func (p *OclFFTPlan) ExecTransform(dst, src *MemObject) error {
 }
 
 //DeletePlan Delete the plan with option to either retain or delete the registers from the map
-func (p *OclFFTPlan) DeletePlan() {
+func (p *OclFFTPlan) DeletePlan(deletebuff bool) {
+	if deletebuff == true {
+		tempkey := strconv.Itoa(p.GetLengths()[0]) + "x" + strconv.Itoa(p.GetLengths()[1]) + "x" + strconv.Itoa(p.GetLengths()[2])
+
+		delete(k, tempkey)
+		// delete(forwardChirpTwiddlesFFT, tempkey)
+		// delete(backwardChirpTwiddles, tempkey)
+		// delete(backwardChirpTwiddlesFFT, tempkey)
+	}
 
 }
 
 //OclFFTTearDown Function for clearing all the clfft related objects
 func OclFFTTearDown() error {
+
+	// releaseCommandQueue(ClCmdQueue)
+
+	for _, v := range typical {
+		v.clCmdQueue.Release()
+		v.clProg.Release()
+		v.clCtx.Release()
+
+	}
+	TeardownCLFFT()
 	return toError(nil)
 }
 
