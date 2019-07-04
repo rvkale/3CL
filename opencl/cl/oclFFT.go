@@ -45,6 +45,8 @@ type chirpArray map[string]int
 //PlanList Complete list and count of all the maps created. If a plan is deleted, the number is reduced.
 var PlanList chirpArray
 
+//var PlanList map[string]int
+
 // type chirpArray [string]*MemObject
 
 // type chirpArray map[string]*MemObject
@@ -447,12 +449,19 @@ func (p *OclFFTPlan) SetLengths(in [3]int) {
 			fmt.Printf("\n Deleting Keys") //delete other keys
 		}
 		tempkey := strconv.Itoa(in[0]) + "x" + strconv.Itoa(in[1]) + "x" + strconv.Itoa(in[2])
+		fmt.Printf("\n Printing tempkey: %s", tempkey)
 		j, found := PlanList[tempkey]
-		if found == true {
-			PlanList[tempkey] = j + 1
-		} else {
-			PlanList[tempkey] = 1
-		}
+		fmt.Printf("\n Printing j for reference %d and found %t", j, found)
+		// if PlanList[tempkey] == nil {
+		// 	PlanList = make(map[string]int)
+		// }
+		// if found == true {
+		// 	fmt.Printf("\n Found the key")
+		// 	PlanList[tempkey] = j + 1
+		// } else {
+		// 	fmt.Printf("\n Did not find the key")
+		// 	PlanList[tempkey] = 1
+		// }
 	}
 }
 
@@ -498,6 +507,7 @@ func (p *OclFFTPlan) SetBatchCount(in int) {
 
 //Destroy Destroy the plan
 func (p *OclFFTPlan) Destroy() {
+	fmt.Printf("\n Destroying the plan ...")
 }
 
 //Bake Bake the plan similar to CLFFT plan
@@ -537,17 +547,17 @@ func (p *OclFFTPlan) ExecTransform(dst, src *MemObject) error {
 }
 
 //DeletePlan Delete the plan with option to either retain or delete the registers from the map
-func (p *OclFFTPlan) DeletePlan(deletebuff bool) {
-	if deletebuff == true {
-		tempkey := strconv.Itoa(p.GetLengths()[0]) + "x" + strconv.Itoa(p.GetLengths()[1]) + "x" + strconv.Itoa(p.GetLengths()[2])
+// func (p *OclFFTPlan) DeletePlan(deletebuff bool) {
+// 	if deletebuff == true {
+// 		tempkey := strconv.Itoa(p.GetLengths()[0]) + "x" + strconv.Itoa(p.GetLengths()[1]) + "x" + strconv.Itoa(p.GetLengths()[2])
 
-		delete(k, tempkey)
-		// delete(forwardChirpTwiddlesFFT, tempkey)
-		// delete(backwardChirpTwiddles, tempkey)
-		// delete(backwardChirpTwiddlesFFT, tempkey)
-	}
+// 		delete(k, tempkey)
+// 		// delete(forwardChirpTwiddlesFFT, tempkey)
+// 		// delete(backwardChirpTwiddles, tempkey)
+// 		// delete(backwardChirpTwiddlesFFT, tempkey)
+// 	}
 
-}
+// }
 
 //OclFFTTearDown Function for clearing all the clfft related objects
 func OclFFTTearDown() error {
