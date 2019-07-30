@@ -16,11 +16,10 @@ const SIZEOF_FLOAT32 = 4
 
 // Slice is like a [][]float32, but may be stored in GPU or host memory.
 type Slice struct {
-	ptr_    [MAX_COMP]unsafe.Pointer // keeps data local // TODO: rm (premature optimization)
-	ptrs    []unsafe.Pointer         // points into ptr_, limited to NComp()
+	ptrs    []unsafe.Pointer
 	size    [3]int
 	memType int8
-	event   [MAX_COMP]*cl.Event
+	event   []*cl.Event
 }
 
 // this package must not depend on OpenCL.
@@ -73,10 +72,11 @@ func NilSlice(nComp int, size [3]int) *Slice {
 func SliceFromPtrs(size [3]int, memType int8, ptrs []unsafe.Pointer) *Slice {
 	length := prod(size)
 	nComp := len(ptrs)
-	util.Argument(nComp > 0 && length > 0 && nComp <= MAX_COMP)
+	util.Argument(nComp > 0 && length > 0)
 	s := new(Slice)
-	s.ptrs = s.ptr_[:nComp]
+	s.ptrs = make([]unsafe.Pointer, nComp)
 	s.size = size
+	s.event = make([]*cl.Event, nComp)
 	for c := range ptrs {
 		s.ptrs[c] = ptrs[c]
 		s.event[c] = nil
@@ -84,8 +84,6 @@ func SliceFromPtrs(size [3]int, memType int8, ptrs []unsafe.Pointer) *Slice {
 	s.memType = memType
 	return s
 }
-
-const MAX_COMP = 3 // Maximum supported number of Slice components
 
 // Frees the underlying storage and zeros the Slice header to avoid accidental use.
 // Slices sharing storage will be invalid after Free. Double free is OK.
@@ -116,7 +114,6 @@ func (s *Slice) Free() {
 // INTERNAL. Overwrite struct fields with zeros to avoid
 // accidental use after Free.
 func (s *Slice) Disable() {
-	s.ptr_ = [MAX_COMP]unsafe.Pointer{}
 	s.ptrs = s.ptrs[:0]
 	s.size = [3]int{0, 0, 0}
 	s.memType = 0
@@ -167,10 +164,11 @@ func (s *Slice) Size() [3]int {
 // Comp returns a single component of the Slice.
 func (s *Slice) Comp(i int) *Slice {
 	sl := new(Slice)
-	sl.ptr_[0] = s.ptrs[i]
-	sl.ptrs = sl.ptr_[:1]
+	sl.ptrs = make([]unsafe.Pointer, 1)
+	sl.ptrs[0] = s.ptrs[i]
 	sl.size = s.size
 	sl.memType = s.memType
+        sl.event = []*cl.Event{s.event[i]}
 	return sl
 }
 
@@ -215,6 +213,7 @@ func (s *Slice) SetEvents(events []*cl.Event) {
 	if s.NComp() != len(events) {
 		log.Panic("size of event list does not match number of components in slice")
 	}
+	s.event = make([]*cl.Event, len(events))
 	for idx, event := range events {
 		s.event[idx] = event
 	}
@@ -247,12 +246,12 @@ func Copy(dst, src *Slice) {
 		}
 	case s && !d:
 		for c := 0; c < dst.NComp(); c++ {
-			eventsList := memCpyDtoH(dst.ptr_[c], src.DevPtr(c), bytes)
+			eventsList := memCpyDtoH(dst.ptrs[c], src.DevPtr(c), bytes)
 			src.SetEvent(c, eventsList[0])
 		}
 	case !s && d:
 		for c := 0; c < dst.NComp(); c++ {
-			eventsList := memCpyHtoD(dst.DevPtr(c), src.ptr_[c], bytes)
+			eventsList := memCpyHtoD(dst.DevPtr(c), src.ptrs[c], bytes)
 			dst.SetEvent(c, eventsList[0])
 		}
 	case !d && !s:
@@ -302,7 +301,7 @@ func (s *Slice) IsNil() bool {
 	if s == nil {
 		return true
 	}
-	return s.ptr_[0] == nil
+	return s.ptrs[0] == nil
 }
 
 func (s *Slice) String() string {
