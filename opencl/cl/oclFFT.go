@@ -115,6 +115,7 @@ type OclFFTPlan struct {
 	layout        ClFFTLayout
 	dimension     ClFFTDim
 	placeness     ClFFTResultLocation
+	handle        *ClFFTPlan
 	chirpz        [3]bool
 	chirp_lengths [3]int
 	fftLengths    [3]int
@@ -133,6 +134,7 @@ type OclFFTPlan struct {
 	clCmdQueue    *CommandQueue
 	FinalBuf      *MemObject
 	plan_key      id_key
+	Synchronous   bool
 }
 
 /////////Map and count of plans available///////
@@ -557,6 +559,76 @@ func (p *OclFFTPlan) ExecTransform(dst, src *MemObject) error {
 // 		// delete(backwardChirpTwiddlesFFT, tempkey)
 // 	}
 
+// }
+
+//ExecAsync Execute the FFT plan, asynchronous.
+//ExecAsync src and dst are 3D arrays stored 1D arrays.
+func (p *OclFFTPlan) ExecAsync(src, dst *MemObject) ([]*Event, error) {
+	if p.Synchronous {
+		p.clCmdQueue.Finish()
+		//timer.Start("fft")
+	}
+	// oksrclen := p.InputLenFloats()
+	// if src.Len() != oksrclen {
+	// 	panic(fmt.Errorf("fft size mismatch: expecting src len %v, got %v", oksrclen, src.Len()))
+	// }
+	// okdstlen := p.OutputLenFloats()
+	// if dst.Len() != okdstlen {
+	// 	panic(fmt.Errorf("fft size mismatch: expecting dst len %v, got %v", okdstlen, dst.Len()))
+	// }
+	// tmpPtr := src.DevPtr(0)
+	// srcMemObj := *(*MemObject)(tmpPtr)
+	// tmpPtr = dst.DevPtr(0)
+	// dstMemObj := *(*MemObject)(tmpPtr)
+	eventsList, err := p.handle.EnqueueBackwardTransform([]*CommandQueue{p.clCmdQueue}, nil,
+		[]*MemObject{src}, []*MemObject{dst}, nil)
+	if p.Synchronous {
+		p.clCmdQueue.Finish()
+		//timer.Stop("fft")
+	}
+	return eventsList, err
+}
+
+//InputLen Required length of the (1D) input array.
+func (p *OclFFTPlan) InputLen() int {
+	return prod3(p.InputSizeFloats())
+}
+
+//prod3 Product of 3 integers
+func prod3(x, y, z int) int {
+	return x * y * z
+}
+
+//InputSizeFloats 3D size of the input array.
+func (p *OclFFTPlan) InputSizeFloats() (Nx, Ny, Nz int) {
+	return p.fftLengths[0], p.fftLengths[1], p.fftLengths[2]
+}
+
+//Free Releases all resources associated with the FFT plan.
+func (p *OclFFTPlan) Free() {
+	if p.handle != nil {
+		p.handle.Destroy()
+		p.handle = nil
+	}
+}
+
+// func (p *OclFFTPlan) InputSizeFloats() (Nx, Ny, Nz int) {
+// 	return p.size[X] + 2, p.size[Y], p.size[Z]
+// }
+
+// // 3D size of the output array.
+// func (p *OclFFTPlan) OutputSizeFloats() (Nx, Ny, Nz int) {
+// 	return p.size[X], p.size[Y], p.size[Z]
+// }
+
+// // Required length of the (1D) input array.
+// func (p *OclFFTPlan) InputLenFloats() int {
+// 	return prod3(p.InputSizeFloats())
+// }
+
+// // Required length of the (1D) output array.
+// func (p *OclFFTPlan) OutputLenFloats() int {
+// 	return prod3(p.OutputSizeFloats())
 // }
 
 //OclFFTTearDown Function for clearing all the clfft related objects
