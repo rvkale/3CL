@@ -30,6 +30,7 @@ Building from source
 Consider downloading a pre-compiled binary. If you want to compile nevertheless:
 
   * install the OpenCL driver, if not yet present.
+  To install on ubuntu distributions, use apt install with packages at the link https://launchpad.net/ubuntu/+source/clfft
    - if unsure, it's probably already there
    - requires OpenCL 1.2 support
   * install Go 
