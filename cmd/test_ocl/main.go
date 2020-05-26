@@ -9,6 +9,7 @@ import (
 
 	//"github.com/mumax/3cl/cmd/test_blu2d/purefft"
 
+	"github.com/mumax/3cl/data"
 	"github.com/mumax/3cl/opencl"
 	"github.com/mumax/3cl/opencl/cl"
 	//"github.com/mumax/3cl/cmd/test_blu_2d"
@@ -29,6 +30,25 @@ var supported_radices = []int{13, 11, 8, 7, 5, 4, 3, 2}
 const maxLen int = 128000000
 
 //HermitianWarning Issue a warning if complex conjugates of hermitian are not closely matching
+
+//PrintArray Prints the input array for debugging
+func PrintArray(InpArr *data.Slice, ArrLength int) {
+	queue := opencl.ClCmdQueue
+	outArray := data.NewSlice(1, [3]int{2 * ArrLength, 1, 1})
+	data.Copy(outArray, InpArr)
+	fmt.Printf("\n Printing the requested array \n")
+	queue.Finish()
+	// queue.Release()
+	//fmt.Println("\n Output data transfer completed. Printing ")
+	result2 := outArray.Host()
+	//results := make([][]float32, 1)
+	for k := 0; k < 1; k++ {
+		//results[i] = make([]float32, 2*5*2)
+		for j := 0; j < ArrLength; j++ {
+			fmt.Printf(" ( %f , %f ) ", result2[k][2*j], result2[k][2*j+1])
+		}
+	}
+}
 
 func main() {
 
@@ -72,17 +92,72 @@ func main() {
 	//fmt.Printf("Device %d (%s): %s \n", *engine.Flag_gpu, d.Type(), d.Name())
 	fmt.Printf("  Address Bits: %d \n", d.AddressBits())
 
-	//queue := opencl.ClCmdQueue
+	// queue := opencl.ClCmdQueue
 
 	effort, _ := cl.CreateDefaultOclFFTPlan()
-	effort.SetLengths([3]int{8, 1, 1})
-	fmt.Printf("Printing array \n")
-	fmt.Printf("%v", effort.GetLengths())
+	effort.SetDevice(d)
+	effort.SetContext(opencl.ClCtx)
+	// effort.SetQueue(queue)
+	effort.SetProgram()
+	// fmt.Printf("\n \n %v ", effort.GetDevice())
+	// effort.SetQueue(queue)
+	// effort.SetLayout(cl.CLFFTLayoutReal)
+	effort.SetLayout(cl.CLFFTLayoutReal)
+	effort.SetDirection(cl.ClFFTDirectionForward)
+	effort.SetPrecision(cl.CLFFTPrecisionSingle)
+
+	effort.SetLengths([3]int{17, 1, 1})
+
+	fmt.Printf("\n Printing array \n")
+	fmt.Printf("%v \n", effort.GetLengths())
+
+	effort.Bake()
 
 	// fmt.Printf("\n Executing Forward 2D FFT. Printing input array \n")
 	// plan2d := FftPlan2DValue{false, true, true, true, false, int(*Flag_size), 2, 1, int(*Flag_size), 2}
-	// inputs2d := make([][]float32, NComponents)
-	// var size2d [3]int
+	inputs2d := make([][]float32, NComponents)
+	var size2d [3]int
+
+	size2d = [3]int{17, 1, 1}
+	for i := 0; i < NComponents; i++ {
+		inputs2d[i] = make([]float32, size2d[0])
+		for j := 0; j < 17; j++ {
+			for k := 0; k < 1; k++ {
+				inputs2d[i][j+k] = float32(j+k) * float32(0.1) //float32(0.1)
+				fmt.Printf("( %f ) ", inputs2d[i][j+k])
+			}
+			fmt.Printf("\n")
+		}
+	}
+
+	fmt.Println("\n Done. Transferring input data from CPU to GPU...")
+	cpuArray2d := data.SliceFromArray(inputs2d, size2d)
+	gpu2dBuffer := opencl.Buffer(NComponents, size2d)
+	gpu2destBuf := opencl.Buffer(NComponents, [3]int{34, 1, 1})
+	// //outBuffer := opencl.Buffer(NComponents, [3]int{2 * N, 1, 1})
+
+	data.Copy(gpu2dBuffer, cpuArray2d)
+
+	fmt.Println("Waiting for data transfer to complete...")
+	// queue.Finish()
+	fmt.Println("Input data transfer completed.")
+
+	// PrintArray(cpuArray2d, 17)
+
+	// //opencl.Recycle(gpu2dBuffer)
+	tmpptr := gpu2dBuffer.DevPtr(0)
+	srcmemobj := (*cl.MemObject)(tmpptr)
+
+	dstpt := gpu2destBuf.DevPtr(0)
+	dstmemobj := (*cl.MemObject)(dstpt)
+
+	effort.ExecTransform(dstmemobj, srcmemobj)
+
+	PrintArray(gpu2destBuf, 17)
+
+	// Parse2D(gpu2dBuffer, plan2d)
+
+	// fmt.Printf("\n Executing 3D FFT \n")
 
 	// if plan2d.IsForw && plan2d.IsRealHerm {
 	// 	size2d = [3]int{plan2d.RowDim * plan2d.ColDim, 1, 1}
