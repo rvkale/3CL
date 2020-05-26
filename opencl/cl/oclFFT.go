@@ -398,13 +398,13 @@ func (p *OclFFTPlan) SetContext(in *Context) {
 	}
 }
 
-//SetQueue To set queue
-func (p *OclFFTPlan) SetQueue(in *CommandQueue) {
-	if p.clCmdQueue == nil || p.clCmdQueue != in {
-		p.clCmdQueue = in
-		p.bake = false
-	}
-}
+// //SetQueue To set queue
+// func (p *OclFFTPlan) SetQueue(in *CommandQueue) {
+// 	if p.clCmdQueue == nil || p.clCmdQueue != in {
+// 		p.clCmdQueue = in
+// 		p.bake = false
+// 	}
+// }
 
 //SetDevice To set device
 func (p *OclFFTPlan) SetDevice(in *Device) {
@@ -1563,16 +1563,16 @@ func (p *OclFFTPlan) parse2D(InpBuf *MemObject) {
 
 	fmt.Printf("\n Generating the correct size Output matrix \n")
 
-	var FinalBuf *MemObject
-	if !c.IsForw && c.IsRealHerm {
-		FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, c.RowDim*c.ColDim)
-	}
-	if c.IsForw && c.IsRealHerm {
-		FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.ColDim*(1+c.RowDim/2))
-	}
-	if !c.IsRealHerm {
-		FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim)
-	}
+	// var FinalBuf *MemObject
+	// if !c.IsForw && c.IsRealHerm {
+	// 	FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, c.RowDim*c.ColDim)
+	// }
+	// if c.IsForw && c.IsRealHerm {
+	// 	FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.ColDim*(1+c.RowDim/2))
+	// }
+	// if !c.IsRealHerm {
+	// 	FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim)
+	// }
 
 	//var IsBlusteinRow, IsBlusteinCol bool
 	ValRow, DecideRow := determineChirpLength(c.RowDim)
@@ -1668,7 +1668,7 @@ func (p *OclFFTPlan) parse2D(InpBuf *MemObject) {
 					FftBuff.Release()
 				}
 				fmt.Printf("\n Implementing Transpose \n")
-				p.complexMatrixTranspose(FinalBuf, SecOutBuf, 0, c.ColDim, int(1+c.RowDim/2))
+				p.complexMatrixTranspose(p.FinalBuf, SecOutBuf, 0, c.ColDim, int(1+c.RowDim/2))
 				fmt.Printf("\n Printing 2d individual output array \n")
 				//PrintArray(FinalBuf, c.RowDim*c.ColDim)
 				TempOutBuf.Release()
@@ -1711,7 +1711,7 @@ func (p *OclFFTPlan) parse2D(InpBuf *MemObject) {
 					FftBuff.Release()
 				}
 				fmt.Printf("\n Implementing Transpose \n")
-				p.complexMatrixTranspose(FinalBuf, SecOutBuf, 0, c.ColDim, c.RowDim)
+				p.complexMatrixTranspose(p.FinalBuf, SecOutBuf, 0, c.ColDim, c.RowDim)
 				fmt.Printf("\n Printing 2d individual output array \n")
 				//PrintArray(FinalBuf, c.RowDim*c.ColDim)
 				TempOutBuf.Release()
@@ -1768,7 +1768,7 @@ func (p *OclFFTPlan) parse2D(InpBuf *MemObject) {
 				fmt.Printf("\n Finished first copy \n")
 				TempCompressBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, c.RowDim)
 				p.compressCmplxtoReal(TempCompressBuff, SmallBuff, c.RowDim, 0, 0)
-				p.memInputCpyFloat32(FinalBuf, TempCompressBuff, j*c.RowDim, 0, c.RowDim)
+				p.memInputCpyFloat32(p.FinalBuf, TempCompressBuff, j*c.RowDim, 0, c.RowDim)
 				SmallBuff.Release()
 				TempCompressBuff.Release()
 			}
@@ -1811,7 +1811,7 @@ func (p *OclFFTPlan) parse2D(InpBuf *MemObject) {
 				FftBuff.Release()
 			}
 			fmt.Printf("\n Implementing Transpose \n")
-			p.complexMatrixTranspose(FinalBuf, SecOutBuf, 0, c.ColDim, c.RowDim)
+			p.complexMatrixTranspose(p.FinalBuf, SecOutBuf, 0, c.ColDim, c.RowDim)
 			fmt.Printf("\n Printing 2d individual output array \n")
 			//PrintArray(FinalBuf, c.RowDim*c.ColDim)
 			TempOutBuf.Release()
@@ -2199,16 +2199,16 @@ func (p *OclFFTPlan) parse3D(InpBuf *MemObject) {
 
 	// 	fmt.Printf("\n Generating the correct size Output matrix \n")
 
-	var FinalBuf *MemObject
-	if !c.IsForw && c.IsRealHerm {
-		FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, c.RowDim*c.ColDim*c.DepthDim)
-	}
-	if c.IsForw && c.IsRealHerm {
-		FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.DepthDim*c.ColDim*(1+c.RowDim/2))
-	}
-	if !c.IsRealHerm {
-		FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.DepthDim*c.RowDim*c.ColDim)
-	}
+	// var FinalBuf *MemObject
+	// if !c.IsForw && c.IsRealHerm {
+	// 	FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, c.RowDim*c.ColDim*c.DepthDim)
+	// }
+	// if c.IsForw && c.IsRealHerm {
+	// 	FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.DepthDim*c.ColDim*(1+c.RowDim/2))
+	// }
+	// if !c.IsRealHerm {
+	// 	FinalBuf, _ = context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.DepthDim*c.RowDim*c.ColDim)
+	// }
 
 	// 	//var IsBlusteinRow, IsBlusteinCol bool
 	ValRow, DecideRow := determineChirpLength(c.RowDim)
@@ -2225,26 +2225,26 @@ func (p *OclFFTPlan) parse3D(InpBuf *MemObject) {
 				// TempBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.ColDim * (1 + c.RowDim/2), 1, 1})
 				// defer opencl.Recycle(TempBuf)
 				fmt.Printf("\n Executing Forward Real FFT without Bluestein's ...\n")
-				p.Clfft3D(FinalBuf, InpBuf, c.RowDim, c.ColDim, c.DepthDim, true, true, c.IsSinglePreci, context)
+				p.Clfft3D(p.FinalBuf, InpBuf, c.RowDim, c.ColDim, c.DepthDim, true, true, c.IsSinglePreci, context)
 
 			} else {
 				//PrintSize = c.DepthDim * c.ColDim * int(1+c.RowDim/2)
 				//FinalBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.ColDim * c.RowDim, 1, 1})
 				fmt.Printf("\n Executing Forward Complex FFT without Bluestein's ...\n")
-				p.Clfft3D(FinalBuf, InpBuf, c.RowDim, c.ColDim, c.DepthDim, false, true, c.IsSinglePreci, context)
+				p.Clfft3D(p.FinalBuf, InpBuf, c.RowDim, c.ColDim, c.DepthDim, false, true, c.IsSinglePreci, context)
 			}
 
 		} else {
 			if c.IsRealHerm {
 				//PrintSize = c.DepthDim * c.ColDim * int(1+c.RowDim/2)
 				fmt.Printf("\n Executing Inverse Hermitian FFT without Bluestein's...\n")
-				p.Clfft3D(FinalBuf, InpBuf, c.RowDim, c.ColDim, c.DepthDim, true, false, c.IsSinglePreci, context)
+				p.Clfft3D(p.FinalBuf, InpBuf, c.RowDim, c.ColDim, c.DepthDim, true, false, c.IsSinglePreci, context)
 
 			} else {
 				//PrintSize = c.DepthDim * c.ColDim * int(1+c.RowDim/2)
 				//FinalBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.RowDim * c.RowDim, 1, 1})
 				fmt.Printf("\n Executing Inverse Complex FFT without Bluestein's...\n")
-				p.Clfft3D(FinalBuf, InpBuf, c.RowDim, c.ColDim, c.DepthDim, false, false, c.IsSinglePreci, context)
+				p.Clfft3D(p.FinalBuf, InpBuf, c.RowDim, c.ColDim, c.DepthDim, false, false, c.IsSinglePreci, context)
 			}
 		}
 	}
@@ -2340,7 +2340,7 @@ func (p *OclFFTPlan) parse3D(InpBuf *MemObject) {
 					FftBuff.Release()
 				}
 				fmt.Printf("\n Implementing Transpose \n")
-				p.complexMatrixTranspose(FinalBuf, TerOutBuf, 0, c.DepthDim, int(1+c.RowDim/2)*c.ColDim)
+				p.complexMatrixTranspose(p.FinalBuf, TerOutBuf, 0, c.DepthDim, int(1+c.RowDim/2)*c.ColDim)
 				fmt.Printf("\n +++++++++++++++++++++++++++ Finished transpose for third dimension +++++++++++++++++ \n")
 
 				//PrintArray(FinalBuf, c.RowDim*c.ColDim)
@@ -2407,7 +2407,7 @@ func (p *OclFFTPlan) parse3D(InpBuf *MemObject) {
 					FftBuff.Release()
 				}
 				fmt.Printf("\n Implementing Transpose \n")
-				p.complexMatrixTranspose(FinalBuf, TerOutBuf, 0, c.DepthDim, c.RowDim*c.ColDim)
+				p.complexMatrixTranspose(p.FinalBuf, TerOutBuf, 0, c.DepthDim, c.RowDim*c.ColDim)
 				fmt.Printf("\n +++++++++++++++++++++++++++ Finished transpose for third dimension +++++++++++++++++ \n")
 
 				//PrintArray(FinalBuf, c.RowDim*c.ColDim)
@@ -2490,7 +2490,7 @@ func (p *OclFFTPlan) parse3D(InpBuf *MemObject) {
 					//fmt.Printf("\n Finished first copy \n")
 					TempCompressBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, c.RowDim)
 					p.compressCmplxtoReal(TempCompressBuff, SmallBuff, c.RowDim, 0, 0)
-					p.memInputCpyFloat32(FinalBuf, TempCompressBuff, j*c.RowDim, 0, c.RowDim)
+					p.memInputCpyFloat32(p.FinalBuf, TempCompressBuff, j*c.RowDim, 0, c.RowDim)
 					SmallBuff.Release()
 					TempCompressBuff.Release()
 				}
@@ -2558,7 +2558,7 @@ func (p *OclFFTPlan) parse3D(InpBuf *MemObject) {
 					FftBuff.Release()
 				}
 				fmt.Printf("\n Implementing Transpose \n")
-				p.complexMatrixTranspose(FinalBuf, TerOutBuf, 0, c.DepthDim, c.RowDim*c.ColDim)
+				p.complexMatrixTranspose(p.FinalBuf, TerOutBuf, 0, c.DepthDim, c.RowDim*c.ColDim)
 				fmt.Printf("\n Printing 2d individual output array \n")
 
 				//PrintArray(FinalBuf, c.RowDim*c.ColDim)
