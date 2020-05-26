@@ -17,7 +17,7 @@ import (
 
 var (
 	Flag_gpu   = flag.Int("gpu", 0, "Specify GPU")
-	Flag_size  = flag.Int("length", 17, "length of data to test")
+	Flag_size  = flag.Int("length", 30, "length of data to test")
 	Flag_print = flag.Bool("print", false, "Print out result")
 	Flag_comp  = flag.Int("components", 1, "Number of components to test")
 	//Flag_conj  = flag.Bool("conjugate", false, "Conjugate B in multiplication")
@@ -106,7 +106,7 @@ func main() {
 	effort.SetDirection(cl.ClFFTDirectionForward)
 	effort.SetPrecision(cl.CLFFTPrecisionSingle)
 
-	effort.SetLengths([3]int{17, 1, 1})
+	effort.SetLengths([3]int{17, 2, 2})
 
 	fmt.Printf("\n Printing array \n")
 	fmt.Printf("%v \n", effort.GetLengths())
@@ -116,24 +116,53 @@ func main() {
 	// fmt.Printf("\n Executing Forward 2D FFT. Printing input array \n")
 	// plan2d := FftPlan2DValue{false, true, true, true, false, int(*Flag_size), 2, 1, int(*Flag_size), 2}
 	inputs2d := make([][]float32, NComponents)
+
 	var size2d [3]int
 
-	size2d = [3]int{17, 1, 1}
+	// size2d = [3]int{34, 1, 1}
+	// for i := 0; i < NComponents; i++ {
+	// 	inputs2d[i] = make([]float32, size2d[0])
+	// 	for j := 0; j < 2; j++ {
+	// 		for k := 0; k < 17; k++ {
+	// 			inputs2d[i][j+k] = float32(j+k) * float32(0.1) //float32(0.1)
+	// 			fmt.Printf("( %f ) ", inputs2d[i][j+k])
+	// 		}
+	// 		fmt.Printf("\n")
+	// 	}
+	// }
+
+	// size2d = [3]int{34, 1, 1}
+	// for i := 0; i < NComponents; i++ {
+	// 	inputs2d[i] = make([]float32, size2d[0])
+	// 	for j := 0; j < 2; j++ {
+	// 		for k := 0; k < 17; k++ {
+	// 			inputs2d[i][j*17+k] = float32(j*17+k) * float32(0.1) //float32(0.1)
+	// 			fmt.Printf("( %f ) ", inputs2d[i][j*17+k])
+	// 		}
+	// 		fmt.Printf("\n")
+	// 	}
+	// }
+
+	size2d = [3]int{68, 1, 1}
 	for i := 0; i < NComponents; i++ {
 		inputs2d[i] = make([]float32, size2d[0])
-		for j := 0; j < 17; j++ {
-			for k := 0; k < 1; k++ {
-				inputs2d[i][j+k] = float32(j+k) * float32(0.1) //float32(0.1)
-				fmt.Printf("( %f ) ", inputs2d[i][j+k])
+		for z := 0; z < 2; z++ {
+			for j := 0; j < 2; j++ {
+				for k := 0; k < 17; k++ {
+					inputs2d[i][z*34+j*17+k] = float32(z*34+j*17+k) * float32(0.01) //float32(0.1)
+					fmt.Printf("( %f ) ", inputs2d[i][z*34+j*17+k])
+				}
+				fmt.Printf("\n")
 			}
-			fmt.Printf("\n")
 		}
 	}
+
+	// panic("\n this is the input \n")
 
 	fmt.Println("\n Done. Transferring input data from CPU to GPU...")
 	cpuArray2d := data.SliceFromArray(inputs2d, size2d)
 	gpu2dBuffer := opencl.Buffer(NComponents, size2d)
-	gpu2destBuf := opencl.Buffer(NComponents, [3]int{34, 1, 1})
+	gpu2destBuf := opencl.Buffer(NComponents, [3]int{136, 1, 1})
 	// //outBuffer := opencl.Buffer(NComponents, [3]int{2 * N, 1, 1})
 
 	data.Copy(gpu2dBuffer, cpuArray2d)
@@ -153,7 +182,9 @@ func main() {
 
 	effort.ExecTransform(dstmemobj, srcmemobj)
 
-	PrintArray(gpu2destBuf, 17)
+	PrintArray(gpu2destBuf, 68)
+
+	effort.Destroy()
 
 	// Parse2D(gpu2dBuffer, plan2d)
 
