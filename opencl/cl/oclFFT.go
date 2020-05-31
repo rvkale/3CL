@@ -283,7 +283,7 @@ func (p *OclFFTPlan) makeFinalBuf() error {
 
 	if p.GetDirection() == ClFFTDirectionForward {
 		forwtru = true
-	} else {
+	} else if p.GetDirection() == ClFFTDirectionBackward {
 		forwtru = false
 	}
 
@@ -390,6 +390,11 @@ func (p *OclFFTPlan) GetBatchCount() int {
 	return p.batches
 }
 
+// GetQueue To determine the queue associated
+func (p *OclFFTPlan) GetQueue() *CommandQueue {
+	return p.clCmdQueue
+}
+
 //SetContext To determine context
 func (p *OclFFTPlan) SetContext(in *Context) {
 	if p.clCtx == nil || p.clCtx != in {
@@ -398,13 +403,13 @@ func (p *OclFFTPlan) SetContext(in *Context) {
 	}
 }
 
-// //SetQueue To set queue
-// func (p *OclFFTPlan) SetQueue(in *CommandQueue) {
-// 	if p.clCmdQueue == nil || p.clCmdQueue != in {
-// 		p.clCmdQueue = in
-// 		p.bake = false
-// 	}
-// }
+// SetQueue To set queue
+func (p *OclFFTPlan) SetQueue(in *CommandQueue) {
+	if p.clCmdQueue == nil || p.clCmdQueue != in {
+		p.clCmdQueue = in
+		p.bake = false
+	}
+}
 
 //SetDevice To set device
 func (p *OclFFTPlan) SetDevice(in *Device) {
@@ -631,13 +636,15 @@ func (p *OclFFTPlan) ExecAsync(src, dst *MemObject) ([]*Event, error) {
 	// srcMemObj := *(*MemObject)(tmpPtr)
 	// tmpPtr = dst.DevPtr(0)
 	// dstMemObj := *(*MemObject)(tmpPtr)
-	eventsList, err := p.handle.EnqueueBackwardTransform([]*CommandQueue{p.clCmdQueue}, nil,
-		[]*MemObject{src}, []*MemObject{dst}, nil)
+	// eventsList, err := p.handle.EnqueueBackwardTransform([]*CommandQueue{p.clCmdQueue}, nil,
+	// 	[]*MemObject{src}, []*MemObject{dst}, nil)
+	p.ExecTransform(dst, src)
 	if Synchronous {
 		p.clCmdQueue.Finish()
 		timer.Stop("fft")
 	}
-	return eventsList, err
+	// return eventsList, err
+	return nil, nil
 }
 
 //InputLen Required length of the (1D) input array.
@@ -706,11 +713,13 @@ func divUp(x, y int) int {
 
 //packComplexArray Convert real array to full complex array
 func (p *OclFFTPlan) packComplexArray(dst, src *MemObject, cnt, iOff, oOff int) {
-	// var queue *CommandQueue
-	queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	if errc != nil {
-		panic(" \n No device found error. Fix it ")
-	}
+
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
+
+	// queue := p.GetQueue()
 	var cfg = &config{Grid: []int{8, 1, 1}, Block: []int{1, 1, 1}}
 	var tmpEventList, tmpEventList1 []*Event
 
@@ -736,7 +745,8 @@ func (p *OclFFTPlan) packComplexArray(dst, src *MemObject, cnt, iOff, oOff int) 
 		log.Panic("Kernel " + "pack_cmplx" + " does not exist!")
 	}
 
-	KernEvent, err := queue.EnqueueNDRangeKernel(p.GetKernel("pack_cmplx"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	// KernEvent, err := queue.EnqueueNDRangeKernel(p.GetKernel("pack_cmplx"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, err := p.GetQueue().EnqueueNDRangeKernel(p.GetKernel("pack_cmplx"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	if err != nil {
 		// fmt.Printf("\n This argument is processing okay \n")
 		log.Fatal(err)
@@ -750,16 +760,16 @@ func (p *OclFFTPlan) packComplexArray(dst, src *MemObject, cnt, iOff, oOff int) 
 		fmt.Printf("WaitForEvents failed in packComplexArray: %+v \n", err)
 	}
 
-	queue.Finish()
-	queue.Release()
+	p.GetQueue().Finish()
+	// queue.Release()
 }
 
 //hermitian2Full Wrapper for hermitian2full OpenCL kernel, asynchronous.
 func (p *OclFFTPlan) hermitian2Full(dst, src *MemObject, sz, count int) {
-	queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	if errc != nil {
-		panic(" \n No device found error. Fix it ")
-	}
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
 	var cfg = &config{Grid: []int{8, 1, 1}, Block: []int{1, 1, 1}}
 	var tmpEventList, tmpEventList1 []*Event
 
@@ -788,7 +798,8 @@ func (p *OclFFTPlan) hermitian2Full(dst, src *MemObject, sz, count int) {
 		log.Fatal(err)
 	}
 
-	KernEvent, err := queue.EnqueueNDRangeKernel(p.GetKernel("hermitian2full"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	// KernEvent, err := queue.EnqueueNDRangeKernel(p.GetKernel("hermitian2full"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, err := p.GetQueue().EnqueueNDRangeKernel(p.GetKernel("hermitian2full"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -798,17 +809,17 @@ func (p *OclFFTPlan) hermitian2Full(dst, src *MemObject, sz, count int) {
 		fmt.Printf("WaitForEvents failed in hermitian2full: %+v \n", err)
 	}
 
-	queue.Finish()
-	queue.Release()
+	p.GetQueue().Finish()
+	// queue.Release()
 }
 
 //partAProcess To preprocess the input data and extend it
 func (p *OclFFTPlan) partAProcess(dst, src *MemObject, originalLeng, extendedLeng, fftDirection, offset int) {
 	//util.Argument(dst.NComp() == src.NComp())
-	queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	if errc != nil {
-		panic(" \n No device found error. Fix it ")
-	}
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
 	var cfg *config
 	//var cfg *config
 	// ClPrefWGSz, err := pl.GetKernel("hermitian2full").PreferredWorkGroupSizeMultiple(pl.GetDevice())
@@ -845,24 +856,24 @@ func (p *OclFFTPlan) partAProcess(dst, src *MemObject, originalLeng, extendedLen
 		log.Fatal(err)
 	}
 
-	KernEvent, _ := queue.EnqueueNDRangeKernel(p.GetKernel("vartwiddlefa"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, _ := p.GetQueue().EnqueueNDRangeKernel(p.GetKernel("vartwiddlefa"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	tmpEventList1 = append(tmpEventList1, KernEvent)
 
 	if err := WaitForEvents(tmpEventList1); err != nil {
 		fmt.Printf("WaitForEvents failed in partAProcess: %+v \n", err)
 	}
 
-	queue.Finish()
-	queue.Release()
+	p.GetQueue().Finish()
+	// queue.Release()
 }
 
 //partBTwidFac Calculating the twiddle factor for multiplication
 func (p *OclFFTPlan) partBTwidFac(dst *MemObject, originalLeng, extendedLeng, fftDirection, offset int) {
 
-	queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	if errc != nil {
-		panic(" \n No device found error. Fix it ")
-	}
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
 	var cfg *config
 	//var cfg *config
 	// ClPrefWGSz, err := pl.GetKernel("hermitian2full").PreferredWorkGroupSizeMultiple(pl.GetDevice())
@@ -896,23 +907,23 @@ func (p *OclFFTPlan) partBTwidFac(dst *MemObject, originalLeng, extendedLeng, ff
 		log.Fatal(err)
 	}
 
-	KernEvent, _ := queue.EnqueueNDRangeKernel(p.GetKernel("multwiddlefact"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, _ := p.GetQueue().EnqueueNDRangeKernel(p.GetKernel("multwiddlefact"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	tmpEventList1 = append(tmpEventList1, KernEvent)
 
 	if err := WaitForEvents(tmpEventList1); err != nil {
 		fmt.Printf("WaitForEvents failed in PartBTwidFact: %+v \n", err)
 	}
 
-	queue.Finish()
-	queue.Release()
+	p.GetQueue().Finish()
+	// queue.Release()
 }
 
 //finalMulTwid Final Twiddle Factor to multiply the
 func (p *OclFFTPlan) finalMulTwid(dst *MemObject, originalLeng, extendedLeng, fftDirection, offset int) {
-	queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	if errc != nil {
-		panic(" \n No device found error. Fix it ")
-	}
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
 
 	var cfg *config
 	bl := make([]int, 1)
@@ -943,23 +954,25 @@ func (p *OclFFTPlan) finalMulTwid(dst *MemObject, originalLeng, extendedLeng, ff
 		log.Fatal(err)
 	}
 
-	KernEvent, _ := queue.EnqueueNDRangeKernel(p.GetKernel("finaltwiddlefact"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, _ := p.GetQueue().EnqueueNDRangeKernel(p.GetKernel("finaltwiddlefact"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	tmpEventList1 = append(tmpEventList1, KernEvent)
 
 	if err := WaitForEvents(tmpEventList1); err != nil {
 		fmt.Printf("WaitForEvents failed in FinalMulTwid: %+v \n", err)
 	}
 
-	queue.Finish()
-	queue.Release()
+	p.GetQueue().Finish()
+	// queue.Release()
 }
 
 //complexMatrixTranspose Tranpose Complex matrix transpose
 func (p *OclFFTPlan) complexMatrixTranspose(dst, src *MemObject, offset, width, height int) {
-	queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	if errc != nil {
-		panic(" \n No device found error. Fix it ")
-	}
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
+
+	// queue := p.GetQueue()
 
 	var cfg *config
 	//cfg := make3DConf([3]int{width, height, 1})
@@ -994,24 +1007,24 @@ func (p *OclFFTPlan) complexMatrixTranspose(dst, src *MemObject, offset, width, 
 		log.Fatal(err)
 	}
 
-	KernEvent, _ := queue.EnqueueNDRangeKernel(p.GetKernel("cmplx_transpose"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, _ := p.GetQueue().EnqueueNDRangeKernel(p.GetKernel("cmplx_transpose"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	tmpEventList1 = append(tmpEventList1, KernEvent)
 
 	if err := WaitForEvents(tmpEventList1); err != nil {
 		fmt.Printf("WaitForEvents failed in complexmatrixtranspose: %+v \n", err)
 	}
 
-	queue.Finish()
-	queue.Release()
+	p.GetQueue().Finish()
+	// queue.Release()
 }
 
 //compressCmplxtoReal Convert complex output of iverse hermitian to real
 func (p *OclFFTPlan) compressCmplxtoReal(dst, src *MemObject, cnt, iOff, oOff int) {
 
-	queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	if errc != nil {
-		panic(" \n No device found error. Fix it ")
-	}
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
 	var cfg = &config{Grid: []int{8, 1, 1}, Block: []int{1, 1, 1}}
 	var tmpEventList, tmpEventList1 []*Event
 
@@ -1035,23 +1048,23 @@ func (p *OclFFTPlan) compressCmplxtoReal(dst, src *MemObject, cnt, iOff, oOff in
 		log.Fatal(err)
 	}
 
-	KernEvent, _ := queue.EnqueueNDRangeKernel(p.GetKernel("compress_cmplx"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, _ := p.GetQueue().EnqueueNDRangeKernel(p.GetKernel("compress_cmplx"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	tmpEventList1 = append(tmpEventList1, KernEvent)
 
 	if err := WaitForEvents(tmpEventList1); err != nil {
 		fmt.Printf("WaitForEvents failed in packcmplxarray: %+v \n", err)
 	}
 
-	queue.Finish()
-	queue.Release()
+	p.GetQueue().Finish()
+	// queue.Release()
 }
 
 //complexArrayMul Complex array mul
 func (p *OclFFTPlan) complexArrayMul(dst, a, b *MemObject, conjB, cnt, offset int) {
-	queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	if errc != nil {
-		panic(" \n No device found error. Fix it ")
-	}
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
 
 	var cfg *config
 	bl := make([]int, 1)
@@ -1085,15 +1098,15 @@ func (p *OclFFTPlan) complexArrayMul(dst, a, b *MemObject, conjB, cnt, offset in
 		log.Fatal(err)
 	}
 
-	KernEvent, _ := queue.EnqueueNDRangeKernel(p.GetKernel("cmplx_mul"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, _ := p.GetQueue().EnqueueNDRangeKernel(p.GetKernel("cmplx_mul"), nil, cfg.Grid, cfg.Block, tmpEventList)
 	tmpEventList1 = append(tmpEventList1, KernEvent)
 
 	if err := WaitForEvents(tmpEventList1); err != nil {
 		fmt.Printf("WaitForEvents failed in complexarraymul: %+v \n", err)
 	}
 
-	queue.Finish()
-	queue.Release()
+	p.GetQueue().Finish()
+	// queue.Release()
 }
 
 //MemInputCpyFloat32 Memory Copy cl object to local
@@ -1101,11 +1114,11 @@ func (p *OclFFTPlan) complexArrayMul(dst, a, b *MemObject, conjB, cnt, offset in
 func (p *OclFFTPlan) memInputCpyFloat32(dst, src *MemObject, offsetDst, offsetSrc, bytes int) {
 
 	// var queue *CommandQueue
-	queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	if errc != nil {
-		panic(" \n No device found error. Fix it ")
-	}
-	_, err := queue.EnqueueCopyBufferFloat32(src, dst, offsetSrc, offsetDst, bytes, nil)
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
+	_, err := p.GetQueue().EnqueueCopyBufferFloat32(src, dst, offsetSrc, offsetDst, bytes, nil)
 
 	//eventList[0], err = queue.EnqueueCopyBuffer(srcMemObj, dstMemObj, offsetSrc, offsetDst, bytes, nil)
 	if err != nil {
@@ -1113,8 +1126,8 @@ func (p *OclFFTPlan) memInputCpyFloat32(dst, src *MemObject, offsetDst, offsetSr
 		panic("\n Stopping execution \n")
 		//return nil
 	}
-	queue.Finish()
-	queue.Release()
+	p.GetQueue().Finish()
+	// queue.Release()
 }
 
 //Clfft3D to caluclate 3d fft directly
@@ -1435,7 +1448,7 @@ func parse1D(InpBuf *MemObject, p *OclFFTPlan) {
 	var inp1d FftPlan1DValue
 	if p.GetDirection() == ClFFTDirectionForward {
 		inp1d.IsForw = true
-	} else {
+	} else if p.GetDirection() == ClFFTDirectionBackward {
 		inp1d.IsForw = false
 	}
 
@@ -1516,7 +1529,7 @@ func (p *OclFFTPlan) parse2D(InpBuf *MemObject) {
 	var c FftPlan2DValue
 	if p.GetDirection() == ClFFTDirectionForward {
 		c.IsForw = true
-	} else {
+	} else if p.GetDirection() == ClFFTDirectionBackward {
 		c.IsForw = false
 	}
 
@@ -2161,7 +2174,7 @@ func (p *OclFFTPlan) parse3D(InpBuf *MemObject) {
 	var c FftPlan3DValue
 	if p.GetDirection() == ClFFTDirectionForward {
 		c.IsForw = true
-	} else {
+	} else if p.GetDirection() == ClFFTDirectionBackward {
 		c.IsForw = false
 	}
 
