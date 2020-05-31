@@ -1134,10 +1134,10 @@ func (p *OclFFTPlan) memInputCpyFloat32(dst, src *MemObject, offsetDst, offsetSr
 func (p *OclFFTPlan) Clfft3D(OutBuf, InBuf *MemObject, N0, N1, N2 int, IsReal, IsForw, IsSinglePrecision bool, context *Context) {
 
 	// var context *Context
-	queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	if errc != nil {
-		panic(" \n No device found error. Fix it ")
-	}
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
 
 	// tmpPtr := InBuf.DevPtr(0)
 	// srcMemObj := *(*cl.MemObject)(tmpPtr)
@@ -1193,7 +1193,7 @@ func (p *OclFFTPlan) Clfft3D(OutBuf, InBuf *MemObject, N0, N1, N2 int, IsReal, I
 	}
 
 	/* Bake the plan. */
-	errF = fftPlanHandle.BakePlanSimple([]*CommandQueue{queue})
+	errF = fftPlanHandle.BakePlanSimple([]*CommandQueue{p.GetQueue()})
 	if errF != nil {
 		fmt.Printf("unable to bake fft plan: %+v \n", errF)
 	}
@@ -1201,14 +1201,14 @@ func (p *OclFFTPlan) Clfft3D(OutBuf, InBuf *MemObject, N0, N1, N2 int, IsReal, I
 	/* Execute the plan. */
 
 	if IsForw {
-		_, errF = fftPlanHandle.EnqueueForwardTransform([]*CommandQueue{queue}, nil, []*MemObject{InBuf}, []*MemObject{OutBuf}, nil)
+		_, errF = fftPlanHandle.EnqueueForwardTransform([]*CommandQueue{p.GetQueue()}, nil, []*MemObject{InBuf}, []*MemObject{OutBuf}, nil)
 		if errF != nil {
 			fmt.Printf("unable to enqueue transform: %+v \n", errF)
 		} else {
 			fmt.Printf("\n Executing forward transform...\n")
 		}
 	} else {
-		_, errF = fftPlanHandle.EnqueueBackwardTransform([]*CommandQueue{queue}, nil, []*MemObject{InBuf}, []*MemObject{OutBuf}, nil)
+		_, errF = fftPlanHandle.EnqueueBackwardTransform([]*CommandQueue{p.GetQueue()}, nil, []*MemObject{InBuf}, []*MemObject{OutBuf}, nil)
 		if errF != nil {
 			fmt.Printf("unable to enqueue transform: %+v \n", errF)
 		} else {
@@ -1216,7 +1216,7 @@ func (p *OclFFTPlan) Clfft3D(OutBuf, InBuf *MemObject, N0, N1, N2 int, IsReal, I
 		}
 	}
 
-	errF = queue.Flush()
+	errF = p.GetQueue().Flush()
 	if errF != nil {
 		fmt.Printf("unable to flush queue: %+v \n", errF)
 	}
@@ -1229,10 +1229,10 @@ func (p *OclFFTPlan) Clfft3D(OutBuf, InBuf *MemObject, N0, N1, N2 int, IsReal, I
 func (p *OclFFTPlan) Clfft2D(OutBuf, InBuf *MemObject, N0 int, N1 int, IsReal, IsForw, IsSinglePrecision bool, context *Context) {
 
 	// var context *Context
-	queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	if errc != nil {
-		panic(" \n No device found error. Fix it ")
-	}
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
 
 	// tmpPtr := InBuf.DevPtr(0)
 	// srcMemObj := *(*cl.MemObject)(tmpPtr)
@@ -1289,21 +1289,21 @@ func (p *OclFFTPlan) Clfft2D(OutBuf, InBuf *MemObject, N0 int, N1 int, IsReal, I
 	}
 
 	/* Bake the plan. */
-	errF = fftPlanHandle.BakePlanSimple([]*CommandQueue{queue})
+	errF = fftPlanHandle.BakePlanSimple([]*CommandQueue{p.GetQueue()})
 	if errF != nil {
 		fmt.Printf("unable to bake fft plan: %+v \n", errF)
 	}
 
 	/* Execute the plan. */
 	if IsForw {
-		_, errF = fftPlanHandle.EnqueueForwardTransform([]*CommandQueue{queue}, nil, []*MemObject{InBuf}, []*MemObject{OutBuf}, nil)
+		_, errF = fftPlanHandle.EnqueueForwardTransform([]*CommandQueue{p.GetQueue()}, nil, []*MemObject{InBuf}, []*MemObject{OutBuf}, nil)
 		if errF != nil {
 			fmt.Printf("unable to enqueue transform: %+v \n", errF)
 		} else {
 			fmt.Printf("\n Executing forward transform...\n")
 		}
 	} else {
-		_, errF = fftPlanHandle.EnqueueBackwardTransform([]*CommandQueue{queue}, nil, []*MemObject{InBuf}, []*MemObject{OutBuf}, nil)
+		_, errF = fftPlanHandle.EnqueueBackwardTransform([]*CommandQueue{p.GetQueue()}, nil, []*MemObject{InBuf}, []*MemObject{OutBuf}, nil)
 		if errF != nil {
 			fmt.Printf("unable to enqueue transform: %+v \n", errF)
 		} else {
@@ -1311,7 +1311,7 @@ func (p *OclFFTPlan) Clfft2D(OutBuf, InBuf *MemObject, N0 int, N1 int, IsReal, I
 		}
 	}
 
-	errF = queue.Flush()
+	errF = p.GetQueue().Flush()
 	if errF != nil {
 		fmt.Printf("unable to flush queue: %+v \n", errF)
 	}
@@ -1329,14 +1329,14 @@ func (p *OclFFTPlan) Clfft1D(OutBuf, InBuf *MemObject, N, ScaleLength int, IsRea
 	fmt.Printf("\n coming here okay \n \n \n")
 
 	// var queue *CommandQueue
-	queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	if errc != nil {
-		panic(" \n No device found error. Fix it ")
-	}
-	_, errq := queue.GetQueueDevice()
-	if errq != nil {
-		panic(" \n No device found error. Fix it ")
-	}
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
+	// _, errq := queue.GetQueueDevice()
+	// if errq != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
 
 	fmt.Printf("\n coming here second time okay \n \n \n")
 	// queue.device = p.GetDevice()
@@ -1401,7 +1401,7 @@ func (p *OclFFTPlan) Clfft1D(OutBuf, InBuf *MemObject, N, ScaleLength int, IsRea
 
 	/* Bake the plan. */
 	fmt.Printf("\n ********* Starting Bakeplan ******* \n")
-	errF = fftPlanHandle.BakePlanSimple([]*CommandQueue{queue})
+	errF = fftPlanHandle.BakePlanSimple([]*CommandQueue{p.GetQueue()})
 	fmt.Printf("\n ********* Not Stuck at Bakeplan ******* \n")
 
 	if errF != nil {
@@ -1411,7 +1411,7 @@ func (p *OclFFTPlan) Clfft1D(OutBuf, InBuf *MemObject, N, ScaleLength int, IsRea
 	/* Execute the plan. */
 	if IsForw {
 
-		_, errF = fftPlanHandle.EnqueueForwardTransform([]*CommandQueue{queue}, nil, []*MemObject{InBuf}, []*MemObject{OutBuf}, nil)
+		_, errF = fftPlanHandle.EnqueueForwardTransform([]*CommandQueue{p.GetQueue()}, nil, []*MemObject{InBuf}, []*MemObject{OutBuf}, nil)
 
 		if errF != nil {
 			fmt.Printf("\n Unable to enqueue forward transform: %+v \n", errF)
@@ -1419,7 +1419,7 @@ func (p *OclFFTPlan) Clfft1D(OutBuf, InBuf *MemObject, N, ScaleLength int, IsRea
 			fmt.Printf("\n Executing forward transform...\n")
 		}
 	} else {
-		_, errF = fftPlanHandle.EnqueueBackwardTransform([]*CommandQueue{queue}, nil, []*MemObject{InBuf}, []*MemObject{OutBuf}, nil)
+		_, errF = fftPlanHandle.EnqueueBackwardTransform([]*CommandQueue{p.GetQueue()}, nil, []*MemObject{InBuf}, []*MemObject{OutBuf}, nil)
 		if errF != nil {
 			fmt.Printf("Unable to enqueue inverse transform: %+v \n", errF)
 		} else {
@@ -1427,8 +1427,8 @@ func (p *OclFFTPlan) Clfft1D(OutBuf, InBuf *MemObject, N, ScaleLength int, IsRea
 		}
 	}
 
-	errF = queue.Flush()
-	releaseCommandQueue(queue)
+	errF = p.GetQueue().Flush()
+	// releaseCommandQueue(p.GetQueue())
 	if errF != nil {
 		fmt.Printf("unable to flush queue: %+v \n", errF)
 	}
@@ -1530,6 +1530,8 @@ func (p *OclFFTPlan) parse2D(InpBuf *MemObject) {
 	if p.GetDirection() == ClFFTDirectionForward {
 		c.IsForw = true
 	} else if p.GetDirection() == ClFFTDirectionBackward {
+		c.IsForw = false
+	} else {
 		c.IsForw = false
 	}
 
