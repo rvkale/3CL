@@ -643,8 +643,18 @@ func (p *OclFFTPlan) ExecAsync(src, dst *MemObject) ([]*Event, error) {
 		p.clCmdQueue.Finish()
 		timer.Stop("fft")
 	}
-	// return eventsList, err
-	return nil, nil
+	ev1, erre := p.GetContext().CreateUserEvent()
+	if erre != nil {
+		panic("\n Failed to create event \n")
+	}
+
+	erre = ev1.SetUserEventStatus(CommandExecStatusComplete)
+	// var evelist []*Event
+
+	evelist := []*Event{ev1}
+	return evelist, nil
+	// return ev1, erre
+	// return nil, nil
 }
 
 //InputLen Required length of the (1D) input array.
@@ -1216,10 +1226,10 @@ func (p *OclFFTPlan) Clfft3D(OutBuf, InBuf *MemObject, N0, N1, N2 int, IsReal, I
 		}
 	}
 
-	errF = p.GetQueue().Flush()
-	if errF != nil {
-		fmt.Printf("unable to flush queue: %+v \n", errF)
-	}
+	// errF = p.GetQueue().Flush()
+	// if errF != nil {
+	// 	fmt.Printf("unable to flush queue: %+v \n", errF)
+	// }
 
 	fmt.Printf("Finished tests on clFFT\n")
 	fftPlanHandle.Destroy()
@@ -1311,10 +1321,10 @@ func (p *OclFFTPlan) Clfft2D(OutBuf, InBuf *MemObject, N0 int, N1 int, IsReal, I
 		}
 	}
 
-	errF = p.GetQueue().Flush()
-	if errF != nil {
-		fmt.Printf("unable to flush queue: %+v \n", errF)
-	}
+	// errF = p.GetQueue().Flush()
+	// if errF != nil {
+	// 	fmt.Printf("unable to flush queue: %+v \n", errF)
+	// }
 
 	fmt.Printf("Finished tests on clFFT\n")
 	fftPlanHandle.Destroy()
@@ -1343,7 +1353,7 @@ func (p *OclFFTPlan) Clfft1D(OutBuf, InBuf *MemObject, N, ScaleLength int, IsRea
 
 	flag := CLFFTDim1D
 
-	fftPlanHandle, errF := NewCLFFTPlan(context, flag, []int{N}) //Don't change this to 2*N
+	fftPlanHandle, errF := NewCLFFTPlan(p.GetContext(), flag, []int{N}) //Don't change this to 2*N
 
 	if errF != nil {
 		fmt.Printf("unable to create new fft plan \n")
@@ -1427,11 +1437,13 @@ func (p *OclFFTPlan) Clfft1D(OutBuf, InBuf *MemObject, N, ScaleLength int, IsRea
 		}
 	}
 
-	errF = p.GetQueue().Flush()
-	// releaseCommandQueue(p.GetQueue())
-	if errF != nil {
-		fmt.Printf("unable to flush queue: %+v \n", errF)
-	}
+	// p.GetQueue().Finish()
+
+	// errF = p.GetQueue().Flush()
+	// // releaseCommandQueue(p.GetQueue())
+	// if errF != nil {
+	// 	fmt.Printf("unable to flush queue: %+v \n", errF)
+	// }
 
 	fmt.Printf("Finished tests on clFFT\n")
 	fftPlanHandle.Destroy()
@@ -1442,7 +1454,7 @@ func (p *OclFFTPlan) Clfft1D(OutBuf, InBuf *MemObject, N, ScaleLength int, IsRea
 //func Parse1D(FinalBuf, InpBuf *MemObject, class interface{}) {
 func parse1D(InpBuf *MemObject, p *OclFFTPlan) {
 
-	context := p.GetContext()
+	// context := p.GetContext()
 	//queue := opencl.ClCmdQueue
 	fmt.Printf("\n Parsing the 1D input to execute appropriate FFT function...\n")
 	var inp1d FftPlan1DValue
@@ -1508,7 +1520,7 @@ func parse1D(InpBuf *MemObject, p *OclFFTPlan) {
 	//OutputBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * inp1d.RowDim, 1, 1})
 	//defer opencl.Recycle(OutputBuf)
 
-	p.fFT1D(p.FinalBuf, InpBuf, inp1d, context)
+	p.fFT1D(p.FinalBuf, InpBuf, inp1d, p.GetContext())
 
 	fmt.Print("\n Finished calculating 1D FFT. Output will be \n")
 
@@ -1611,7 +1623,7 @@ func (p *OclFFTPlan) parse2D(InpBuf *MemObject) {
 		} else {
 			if c.IsRealHerm {
 				fmt.Printf("\n Executing Inverse Hermitian FFT without Bluestein's...\n")
-				p.Clfft2D(p.FinalBuf, InpBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci, context)
+				p.Clfft2D(p.FinalBuf, InpBuf, c.RowDim, c.ColDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci, p.GetContext())
 
 			} else {
 				//FinalBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.RowDim * c.RowDim, 1, 1})
@@ -1847,10 +1859,10 @@ func (p *OclFFTPlan) parse2D(InpBuf *MemObject) {
 //fFT1D to identify the details about the FFT
 func (p *OclFFTPlan) fFT1D(FinalBuf, InpBuf *MemObject, class interface{}, context *Context) {
 	// var queue *CommandQueue
-	queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	if errc != nil {
-		panic(" \n No device found error. Fix it ")
-	}
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
 	fmt.Printf("\n Parsing the input to execute appropriate FFT function...\n")
 	c, ok := class.(FftPlan1DValue)
 
@@ -1864,12 +1876,12 @@ func (p *OclFFTPlan) fFT1D(FinalBuf, InpBuf *MemObject, class interface{}, conte
 
 				fmt.Printf("\n Executing Forward Real FFT without Bluestein's ...\n")
 				//purefft.Clfft1D(TempBuf, OpBuf, c.RowDim, true, true, c.IsSinglePreci)
-				p.Clfft1D(FinalBuf, InpBuf, c.RowDim, c.FinalN, true, true, c.IsSinglePreci, false, context)
+				p.Clfft1D(FinalBuf, InpBuf, c.RowDim, c.FinalN, true, true, c.IsSinglePreci, false, p.GetContext())
 
 			} else {
 				//FinalBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * c.RowDim, 1, 1})
 				fmt.Printf("\n Executing Forward Complex FFT without Bluestein's ...\n")
-				p.Clfft1D(FinalBuf, InpBuf, c.RowDim, c.FinalN, false, true, c.IsSinglePreci, false, context)
+				p.Clfft1D(FinalBuf, InpBuf, c.RowDim, c.FinalN, false, true, c.IsSinglePreci, false, p.GetContext())
 				//return FinalBuf
 			}
 
@@ -1880,13 +1892,13 @@ func (p *OclFFTPlan) fFT1D(FinalBuf, InpBuf *MemObject, class interface{}, conte
 				//opencl.Hermitian2Full(TempBuf, InpBuf)
 				fmt.Printf("\n Executing Inverse Hermitian FFT without Bluestein's...\n")
 				//purefft.Clfft1D(InpBuf, FinalBuf, c.RowDim, c.IsRealHerm, c.IsForw, c.IsSinglePreci)
-				p.Clfft1D(FinalBuf, InpBuf, c.RowDim, c.FinalN, true, false, c.IsSinglePreci, false, context)
+				p.Clfft1D(FinalBuf, InpBuf, c.RowDim, c.FinalN, true, false, c.IsSinglePreci, false, p.GetContext())
 				//return FinalBuf
 
 			} else {
 				//FinalBuf := data.NewSlice(int(*Flag_comp), [3]int{2 * c.RowDim, 1, 1})
 				fmt.Printf("\n Executing Inverse Complex FFT without Bluestein's...\n")
-				p.Clfft1D(FinalBuf, InpBuf, c.RowDim, c.FinalN, false, false, c.IsSinglePreci, false, context)
+				p.Clfft1D(FinalBuf, InpBuf, c.RowDim, c.FinalN, false, false, c.IsSinglePreci, false, p.GetContext())
 				//return FinalBuf
 			}
 		}
@@ -1895,67 +1907,67 @@ func (p *OclFFTPlan) fFT1D(FinalBuf, InpBuf *MemObject, class interface{}, conte
 		if c.IsForw {
 			if c.IsRealHerm {
 				fmt.Printf("\n Executing Forward Real FFT with Bluesteins...\n")
-				PartATempBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim)
+				PartATempBuf, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim)
 				defer PartATempBuf.Release()
 				fmt.Printf("\n Processing Part A with the twiddle factor \n")
 				p.packComplexArray(PartATempBuf, InpBuf, c.RowDim, 0, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
-				PartAProcBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartAProcBuf, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartAProcBuf.Release()
 				fmt.Printf("\n Processing Part A with the twiddle factor \n")
 				p.partAProcess(PartAProcBuf, PartATempBuf, c.RowDim, c.FinalN, 1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
-				PartBBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartBBuf, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartBBuf.Release()
 				fmt.Printf("\n Generating part B for Bluesteins")
 				p.partBTwidFac(PartBBuf, c.RowDim, c.FinalN, 1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Executing forward FFT for Part A \n")
-				PartAFFT, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartAFFT, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartAFFT.Release()
-				p.Clfft1D(PartAFFT, PartAProcBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, context)
+				p.Clfft1D(PartAFFT, PartAProcBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, p.GetContext())
 				fmt.Printf("\n Executing forward FFT for Part B \n")
-				PartBFFT, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartBFFT, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartBFFT.Release()
-				p.Clfft1D(PartBFFT, PartBBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, context)
+				p.Clfft1D(PartBFFT, PartBBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, p.GetContext())
 
 				fmt.Printf("\n Multiplying Part A and Part B FFT \n")
-				MulBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				MulBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer MulBuff.Release()
 				p.complexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Taking inverse FFT of multiplication \n")
-				InvBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				InvBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer InvBuff.Release()
-				p.Clfft1D(InvBuff, MulBuff, c.FinalN, c.FinalN, false, false, c.IsSinglePreci, false, context)
+				p.Clfft1D(InvBuff, MulBuff, c.FinalN, c.FinalN, false, false, c.IsSinglePreci, false, p.GetContext())
 
 				fmt.Printf("\n Preparing final twiddle factor")
-				FinTwid, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				FinTwid, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTwid.Release()
 				p.finalMulTwid(FinTwid, c.RowDim, c.FinalN, 1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Multiplying with Final Twiddle Factor")
 
-				FinTempBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				FinTempBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTempBuff.Release()
 				p.complexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				// Execute the special harm check function here
@@ -1969,60 +1981,60 @@ func (p *OclFFTPlan) fFT1D(FinalBuf, InpBuf *MemObject, class interface{}, conte
 
 				fmt.Printf("\n Executing Forward Complex FFT with Bluesteins...\n")
 
-				PartAProcBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartAProcBuf, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartAProcBuf.Release()
 				fmt.Printf("\n Processing Part A with the twiddle factor \n")
 				p.partAProcess(PartAProcBuf, InpBuf, c.RowDim, c.FinalN, 1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
-				PartBBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartBBuf, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartBBuf.Release()
 				fmt.Printf("\n Generating part B for Bluesteins")
 				p.partBTwidFac(PartBBuf, c.RowDim, c.FinalN, 1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Executing forward FFT for Part A \n")
-				PartAFFT, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartAFFT, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartAFFT.Release()
-				p.Clfft1D(PartAFFT, PartAProcBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, context)
+				p.Clfft1D(PartAFFT, PartAProcBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, p.GetContext())
 
 				fmt.Printf("\n Executing forward FFT for Part B \n")
 
-				PartBFFT, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartBFFT, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartBFFT.Release()
-				p.Clfft1D(PartBFFT, PartBBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, context)
+				p.Clfft1D(PartBFFT, PartBBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, p.GetContext())
 
 				fmt.Printf("\n Multiplying Part A and Part B FFT \n")
-				MulBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				MulBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer MulBuff.Release()
 				p.complexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Taking inverse FFT of multiplication \n")
-				InvBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				InvBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer InvBuff.Release()
-				p.Clfft1D(InvBuff, MulBuff, c.FinalN, c.FinalN, false, false, c.IsSinglePreci, false, context)
+				p.Clfft1D(InvBuff, MulBuff, c.FinalN, c.FinalN, false, false, c.IsSinglePreci, false, p.GetContext())
 
 				fmt.Printf("\n Preparing final twiddle factor")
-				FinTwid, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				FinTwid, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTwid.Release()
 				p.finalMulTwid(FinTwid, c.RowDim, c.FinalN, 1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Multiplying with Final Twiddle Factor")
-				FinTempBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				FinTempBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTempBuff.Release()
 				p.complexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				p.memInputCpyFloat32(FinalBuf, FinTempBuff, 0, 0, 2*c.RowDim)
@@ -2033,71 +2045,71 @@ func (p *OclFFTPlan) fFT1D(FinalBuf, InpBuf *MemObject, class interface{}, conte
 			if c.IsRealHerm {
 				fmt.Printf("\n Executing Inverse Real FFT with Bluesteins...\n")
 
-				PartABuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim)
+				PartABuf, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim)
 				defer PartABuf.Release()
 
 				fmt.Printf("\n Converting Hermitian to Full Complex of Part A to complex for multiplication with twiddle factor\n")
 				p.hermitian2Full(PartABuf, InpBuf, c.FinalN/2, c.RowDim/2)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 
-				PartAProcBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartAProcBuf, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartAProcBuf.Release()
 				fmt.Printf("\n Processing Part A with the twiddle factor \n")
 				p.partAProcess(PartAProcBuf, PartABuf, c.RowDim, c.FinalN, -1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
-				PartBBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartBBuf, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartBBuf.Release()
 				fmt.Printf("\n Generating part B for Bluesteins")
 				p.partBTwidFac(PartBBuf, c.RowDim, c.FinalN, -1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Executing forward FFT for Part A \n")
-				PartAFFT, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartAFFT, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartAFFT.Release()
-				p.Clfft1D(PartAFFT, PartAProcBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, context)
+				p.Clfft1D(PartAFFT, PartAProcBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, p.GetContext())
 				fmt.Printf("\n Executing forward FFT for Part B \n")
-				PartBFFT, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartBFFT, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartBFFT.Release()
-				p.Clfft1D(PartBFFT, PartBBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, context)
+				p.Clfft1D(PartBFFT, PartBBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, p.GetContext())
 				fmt.Printf("\n Multiplying Part A and Part B FFT \n")
-				MulBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				MulBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer MulBuff.Release()
 				p.complexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Taking inverse FFT of multiplication \n")
-				InvBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				InvBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer InvBuff.Release()
-				p.Clfft1D(InvBuff, MulBuff, c.FinalN, c.RowDim, false, false, c.IsSinglePreci, true, context)
+				p.Clfft1D(InvBuff, MulBuff, c.FinalN, c.RowDim, false, false, c.IsSinglePreci, true, p.GetContext())
 
 				fmt.Printf("\n Preparing final twiddle factor")
-				FinTwid, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				FinTwid, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTwid.Release()
 				p.finalMulTwid(FinTwid, c.RowDim, c.FinalN, -1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Multiplying with Final Twiddle Factor")
-				FinTempBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				FinTempBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTempBuff.Release()
 				p.complexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Converting the array to required length \n")
 				p.compressCmplxtoReal(FinalBuf, FinTempBuff, c.RowDim, 0, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Finished calculating Inverse FFT using Blusteins Method \n")
@@ -2105,58 +2117,58 @@ func (p *OclFFTPlan) fFT1D(FinalBuf, InpBuf *MemObject, class interface{}, conte
 			} else {
 				fmt.Printf("\n Executing Inverse Complex FFT ...\n")
 
-				PartAProcBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartAProcBuf, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartAProcBuf.Release()
 				fmt.Printf("\n Processing Part A with the twiddle factor \n")
 				p.partAProcess(PartAProcBuf, InpBuf, c.RowDim, c.FinalN, -1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
-				PartBBuf, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartBBuf, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartBBuf.Release()
 				fmt.Printf("\n Generating part B for Bluesteins")
 				p.partBTwidFac(PartBBuf, c.RowDim, c.FinalN, -1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Executing forward FFT for Part A \n")
-				PartAFFT, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartAFFT, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartAFFT.Release()
-				p.Clfft1D(PartAFFT, PartAProcBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, context)
+				p.Clfft1D(PartAFFT, PartAProcBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, p.GetContext())
 
 				fmt.Printf("\n Executing forward FFT for Part B \n")
-				PartBFFT, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				PartBFFT, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartBFFT.Release()
-				p.Clfft1D(PartBFFT, PartBBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, context)
+				p.Clfft1D(PartBFFT, PartBBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, p.GetContext())
 
 				fmt.Printf("\n Multiplying Part A and Part B FFT \n")
-				MulBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				MulBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer MulBuff.Release()
 				p.complexArrayMul(MulBuff, PartAFFT, PartBFFT, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Taking inverse FFT of multiplication \n")
-				InvBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				InvBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer InvBuff.Release()
-				p.Clfft1D(InvBuff, MulBuff, c.FinalN, c.RowDim, false, false, c.IsSinglePreci, true, context)
+				p.Clfft1D(InvBuff, MulBuff, c.FinalN, c.RowDim, false, false, c.IsSinglePreci, true, p.GetContext())
 
 				fmt.Printf("\n Preparing final twiddle factor")
-				FinTwid, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				FinTwid, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				p.finalMulTwid(FinTwid, c.RowDim, c.FinalN, -1, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				fmt.Printf("\n Multiplying with Final Twiddle Factor")
-				FinTempBuff, _ := context.CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
+				FinTempBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer FinTempBuff.Release()
 				p.complexArrayMul(FinTempBuff, FinTwid, InvBuff, 0, c.FinalN, 0)
 				fmt.Println("\n Waiting for kernel to finish execution...")
-				queue.Finish()
+				p.GetQueue().Finish()
 				fmt.Println("\n Execution finished.")
 
 				p.memInputCpyFloat32(FinalBuf, FinTempBuff, 0, 0, 2*c.RowDim)
