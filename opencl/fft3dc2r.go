@@ -12,61 +12,75 @@ import (
 // 3D single-precision real-to-complex FFT plan.
 type fft3DC2RPlan struct {
 	fftplan
+	// handle *cl.OclFFTPlan
 	size [3]int
 }
 
 // 3D single-precision real-to-complex FFT plan.
 func newFFT3DC2R(Nx, Ny, Nz int) fft3DC2RPlan {
-        // TODO: Update plan creation to create plan from new FFT library
-	handle, err := cl.NewCLFFTPlan(ClCtx, cl.CLFFTDim3D, []int{Nx, Ny, Nz}) // new xyz swap
+
+	// handle, err := cl.NewCLFFTPlan(ClCtx, cl.CLFFTDim3D, []int{Nx, Ny, Nz}) // new xyz swap
+	effort, err := cl.CreateDefaultOclFFTPlan()
 	if err != nil {
 		log.Printf("Unable to create fft3dc2r plan \n")
 	}
-        // TODO: The next lines running Set<> functions configure
-        // the clFFT plans for the simulator. These need to be
-        // updated accordingly for the new FFT library
-	arrLayout := cl.NewArrayLayout()
-	arrLayout.SetInputLayout(cl.CLFFTLayoutHermitianInterleaved)
-	arrLayout.SetOutputLayout(cl.CLFFTLayoutReal)
-	err = handle.SetLayouts(arrLayout)
-	if err != nil {
-		log.Printf("Unable to set buffer layouts of fft3dc2r plan \n")
-	}
 
-	InStrideArr := []int{1, Nx/2 + 1, Ny * (Nx/2 + 1)}
-	err = handle.SetInStride(InStrideArr)
-	if err != nil {
-		log.Printf("Unable to set input stride of fft3dc2r plan \n")
-	}
+	effort.SetDevice(ClDevice)
+	effort.SetContext(ClCtx)
+	effort.SetQueue(ClCmdQueue)
+	effort.SetProgram()
+	effort.SetDimension(cl.CLFFTDim3D)
 
-	err = handle.SetResultOutOfPlace()
-	if err != nil {
-		log.Printf("Unable to set placeness of fft3dc2r result \n")
-	}
+	// arrLayout := cl.NewArrayLayout()
+	// arrLayout.SetInputLayout(cl.CLFFTLayoutHermitianInterleaved)
+	// arrLayout.SetOutputLayout(cl.CLFFTLayoutReal)
+	// err = handle.SetLayouts(arrLayout)
+	// if err != nil {
+	// 	log.Printf("Unable to set buffer layouts of fft3dc2r plan \n")
+	// }
 
-	err = handle.SetSinglePrecision()
-	if err != nil {
-		log.Printf("Unable to set precision of fft3dc2r plan \n")
-	}
+	effort.SetLayout(cl.CLFFTLayoutHermitianInterleaved)
+	InStrideArr := [3]int{1, Nx/2 + 1, Ny * (Nx/2 + 1)}
+	// err = handle.SetInStride(InStrideArr)
+	// if err != nil {
+	// 	log.Printf("Unable to set input stride of fft3dc2r plan \n")
+	// }
+	effort.SetInStride(InStrideArr)
 
-	err = handle.SetResultNoTranspose()
-	if err != nil {
-		log.Printf("Unable to set transpose of fft3dc2r result \n")
-	}
+	// err = handle.SetResultOutOfPlace()
+	// if err != nil {
+	// 	log.Printf("Unable to set placeness of fft3dc2r result \n")
+	// }
+	effort.SetResultLocation(cl.ClFFTResultLocationOutOfPlace)
 
-	err = handle.SetScale(cl.ClFFTDirectionBackward, float32(1.0))
-	if err != nil {
-		log.Printf("Unable to set scaling factor of fft3dc2r result \n")
-	}
+	// err = handle.SetSinglePrecision()
+	// if err != nil {
+	// 	log.Printf("Unable to set precision of fft3dc2r plan \n")
+	// }
+	effort.SetPrecision(cl.CLFFTPrecisionSingle)
 
-        // TODO: After configuring the plans, bakeplan is run so that
-        // it does not need to be run when plan is first executed
-	err = handle.BakePlanSimple([]*cl.CommandQueue{ClCmdQueue})
-	if err != nil {
-		log.Printf("Unable to bake fft3dc2r plan \n")
-	}
+	effort.SetDirection(cl.ClFFTDirectionBackward)
 
-	return fft3DC2RPlan{fftplan{handle}, [3]int{Nx, Ny, Nz}}
+	effort.SetLengths([3]int{Nx, Ny, Nz})
+
+	// err = handle.SetResultNoTranspose()
+	// if err != nil {
+	// 	log.Printf("Unable to set transpose of fft3dc2r result \n")
+	// }
+
+	// err = handle.SetScale(cl.ClFFTDirectionBackward, float32(1.0))
+	// if err != nil {
+	// 	log.Printf("Unable to set scaling factor of fft3dc2r result \n")
+	// }
+
+	effort.Bake()
+
+	// err = handle.BakePlanSimple([]*cl.CommandQueue{ClCmdQueue})
+	// if err != nil {
+	// 	log.Printf("Unable to bake fft3dc2r plan \n")
+	// }
+
+	return fft3DC2RPlan{fftplan{effort}, [3]int{Nx, Ny, Nz}}
 }
 
 // Execute the FFT plan, asynchronous.
@@ -85,22 +99,36 @@ func (p *fft3DC2RPlan) ExecAsync(src, dst *data.Slice) ([]*cl.Event, error) {
 		panic(fmt.Errorf("fft size mismatch: expecting dst len %v, got %v", okdstlen, dst.Len()))
 	}
 	tmpPtr := src.DevPtr(0)
-	srcMemObj := *(*cl.MemObject)(tmpPtr)
+	srcMemObj := (*cl.MemObject)(tmpPtr)
 	tmpPtr = dst.DevPtr(0)
-	dstMemObj := *(*cl.MemObject)(tmpPtr)
-        // TODO: the following line needs to be updated for the new FFT library
-	eventsList, err := p.handle.EnqueueBackwardTransform([]*cl.CommandQueue{ClCmdQueue}, []*cl.Event{src.GetEvent(0), dst.GetEvent(0)},
-		[]*cl.MemObject{&srcMemObj}, []*cl.MemObject{&dstMemObj}, nil)
+	dstMemObj := (*cl.MemObject)(tmpPtr)
+	// eventsList, err := p.handle.EnqueueBackwardTransform([]*cl.CommandQueue{ClCmdQueue}, []*cl.Event{src.GetEvent(0), dst.GetEvent(0)},
+	// 	[]*cl.MemObject{&srcMemObj}, []*cl.MemObject{&dstMemObj}, nil)
+
+	p.handle.ExecTransform(dstMemObj, srcMemObj)
+
 	if Synchronous {
 		ClCmdQueue.Finish()
 		timer.Stop("fft")
 	}
-	return eventsList, err
+
+	ev1, erre := p.handle.GetContext().CreateUserEvent()
+	if erre != nil {
+		panic("\n Failed to create event \n")
+	}
+
+	erre = ev1.SetUserEventStatus(cl.CommandExecStatusComplete)
+	// var evelist []*Event
+
+	evelist := []*cl.Event{ev1}
+	return evelist, erre
+	// return eventsList, err
+	// return nil, nil
 }
 
 // 3D size of the input array.
 func (p *fft3DC2RPlan) InputSizeFloats() (Nx, Ny, Nz int) {
-	return 2 * (p.size[X]/2 + 1), p.size[Y], p.size[Z]
+	return p.size[X] + 2, p.size[Y], p.size[Z]
 }
 
 // 3D size of the output array.
