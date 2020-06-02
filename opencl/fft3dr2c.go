@@ -110,15 +110,23 @@ func (p *fft3DR2CPlan) ExecAsync(src, dst *data.Slice) ([]*cl.Event, error) {
 		timer.Stop("fft")
 	}
 
-	ev1, erre := p.handle.GetContext().CreateUserEvent()
+	evelist := make([]*cl.Event, 1)
+
+	var erre error
+
+	evelist[0], erre = p.handle.GetContext().CreateUserEvent()
 	if erre != nil {
 		panic("\n Failed to create event \n")
 	}
 
-	erre = ev1.SetUserEventStatus(cl.CommandExecStatusComplete)
+	erre = evelist[0].SetUserEventStatus(cl.CommandExecStatusComplete)
+
+	if erre != nil {
+		panic("\n Error setting user status \n")
+	}
 	// var evelist []*Event
 
-	evelist := []*cl.Event{ev1}
+	// evelist[0] = ev1
 	return evelist, erre
 
 	// return eventsList, err
