@@ -33,24 +33,27 @@ const maxLen int = 128000000
 
 //PrintArray Prints the input array for debugging
 func PrintArray(InpArr *data.Slice, ArrLength int) {
-	queue := opencl.ClCmdQueue
-	outArray := data.NewSlice(1, [3]int{2 * ArrLength, 1, 1})
+	// queue := opencl.ClCmdQueue
+	outArray := data.NewSlice(1, [3]int{2 + ArrLength, 1, 1})
 	data.Copy(outArray, InpArr)
 	fmt.Printf("\n Printing the requested array \n")
-	queue.Finish()
+	// queue.Finish()
 	// queue.Release()
 	//fmt.Println("\n Output data transfer completed. Printing ")
 	result2 := outArray.Host()
 	//results := make([][]float32, 1)
 	for k := 0; k < 1; k++ {
-		//results[i] = make([]float32, 2*5*2)
-		for j := 0; j < ArrLength; j++ {
+		// results[i] = make([]float32, 2*5*2)
+		for j := 0; j < int(ArrLength); j++ {
 			fmt.Printf(" ( %f , %f ) ", result2[k][2*j], result2[k][2*j+1])
 		}
 	}
 }
 
 func main() {
+
+	var fft_length int
+	fft_length = 17
 
 	flag.Parse()
 	//var Desci int //Descision variable
@@ -92,26 +95,9 @@ func main() {
 	//fmt.Printf("Device %d (%s): %s \n", *engine.Flag_gpu, d.Type(), d.Name())
 	fmt.Printf("  Address Bits: %d \n", d.AddressBits())
 
-	// queue := opencl.ClCmdQueue
+	queue := opencl.ClCmdQueue
 
-	effort, _ := cl.CreateDefaultOclFFTPlan()
-	effort.SetDevice(d)
-	effort.SetContext(opencl.ClCtx)
-	// effort.SetQueue(queue)
-	effort.SetProgram()
-	// fmt.Printf("\n \n %v ", effort.GetDevice())
-	// effort.SetQueue(queue)
-	// effort.SetLayout(cl.CLFFTLayoutReal)
-	effort.SetLayout(cl.CLFFTLayoutReal)
-	effort.SetDirection(cl.ClFFTDirectionForward)
-	effort.SetPrecision(cl.CLFFTPrecisionSingle)
-
-	effort.SetLengths([3]int{17, 2, 2})
-
-	fmt.Printf("\n Printing array \n")
-	fmt.Printf("%v \n", effort.GetLengths())
-
-	effort.Bake()
+	fmt.Printf("\n Printing device: %v", d)
 
 	// fmt.Printf("\n Executing Forward 2D FFT. Printing input array \n")
 	// plan2d := FftPlan2DValue{false, true, true, true, false, int(*Flag_size), 2, 1, int(*Flag_size), 2}
@@ -119,17 +105,22 @@ func main() {
 
 	var size2d [3]int
 
-	// size2d = [3]int{34, 1, 1}
-	// for i := 0; i < NComponents; i++ {
-	// 	inputs2d[i] = make([]float32, size2d[0])
-	// 	for j := 0; j < 2; j++ {
-	// 		for k := 0; k < 17; k++ {
-	// 			inputs2d[i][j+k] = float32(j+k) * float32(0.1) //float32(0.1)
-	// 			fmt.Printf("( %f ) ", inputs2d[i][j+k])
-	// 		}
-	// 		fmt.Printf("\n")
-	// 	}
-	// }
+	// size2d = [3]int{2 * fft_length, 1, 1}
+	size2d = [3]int{fft_length, 1, 1}
+	for i := 0; i < NComponents; i++ {
+		inputs2d[i] = make([]float32, size2d[0])
+		for j := 0; j < 1; j++ {
+			for k := 0; k < fft_length; k++ {
+				inputs2d[i][k] = float32(k)
+				// inputs2d[i][j+2*k] = float32(k) //* float32(0.1) //float32(0.1)
+				// inputs2d[i][j+2*k+1] = float32(0)
+
+				// fmt.Printf("( %f , %f  ) ", inputs2d[i][j+2*k], inputs2d[i][j+2*k+1])
+				fmt.Printf("( %f ) ", inputs2d[i][k])
+			}
+			fmt.Printf("\n")
+		}
+	}
 
 	// size2d = [3]int{34, 1, 1}
 	// for i := 0; i < NComponents; i++ {
@@ -143,32 +134,65 @@ func main() {
 	// 	}
 	// }
 
-	size2d = [3]int{68, 1, 1}
-	for i := 0; i < NComponents; i++ {
-		inputs2d[i] = make([]float32, size2d[0])
-		for z := 0; z < 2; z++ {
-			for j := 0; j < 2; j++ {
-				for k := 0; k < 17; k++ {
-					inputs2d[i][z*34+j*17+k] = float32(z*34+j*17+k) * float32(0.01) //float32(0.1)
-					fmt.Printf("( %f ) ", inputs2d[i][z*34+j*17+k])
-				}
-				fmt.Printf("\n")
-			}
-		}
-	}
+	// size2d = [3]int{34, 1, 1}
+	// for i := 0; i < NComponents; i++ {
+	// 	inputs2d[i] = make([]float32, size2d[0])
+	// 	for z := 0; z < 1; z++ {
+	// 		for j := 0; j < 17; j++ {
+	// 			for k := 0; k < 2; k++ {
+	// 				inputs2d[i][z*34+j*2+k] = float32(z*34+j*2+k) * float32(0.01) //float32(0.1)
+	// 				fmt.Printf("( %f ) ", inputs2d[i][z*34+j*2+k])
+	// 			}
+	// 			fmt.Printf("\n")
+	// 		}
+	// 	}
+	// }
+
+	// if !plan2d.IsForw && plan2d.IsRealHerm {
+	// fmt.Printf("\n Printing default value of hermitian matrix of 17*2 of FFT of 0,1,2,...,16;17,18,...,33")
+	// size2d = [3]int{2 * int(1+plan2d.RowDim/2) * plan2d.ColDim, 1, 1}
+	// size2d = [3]int{2 * 34, 1, 1}
+	// for i := 0; i < NComponents; i++ {
+	// 	inputs2d[i] = make([]float32, size2d[0])
+	// 	for j := 0; j < plan2d.ColDim; j++ {
+	// 		for k := 0; k < int(1+plan2d.RowDim/2); k++ {
+	// 			inputs2d[i][2*(j*plan2d.RowDim+k)] = float32(j*int(1+plan2d.RowDim/2) + k)   //float32(0.1)
+	// 			inputs2d[i][2*(j*plan2d.RowDim+k)+1] = float32(j*int(1+plan2d.RowDim/2) + k) //float32(0.1)
+	// 			//fmt.Printf(" (%f, %f) ", inputs2d[i][2*(j*int(1+plan2d.RowDim/2)+k)], inputs2d[i][2*(j*int(1+plan2d.RowDim/2)+k)+1])
+	// 		}
+	// 		//fmt.Printf("\n")
+	// 	}
+	// }
+	// inputs2d[0] = []float32{56.099998, 0.000001, -1.700004, 9.094196, -1.700002, 4.388192, -1.699986, 2.745589,
+	// 	-1.699995, 1.864812, -1.700000, 1.283777, -1.699999, 0.846498, -1.700004, 0.483691,
+	// 	-1.700001, 0.157525,
+	// 	-28.900002, 0.000000, 0.000001, -0.000000, 0.000001, 0.000006, -0.000006, 0.000001,
+	// 	-0.000002, 0.000000, -0.000000, 0.000002, -0.000001, 0.000001, 0.000002, 0.000000,
+	// 	0.000000, 0.000000}
+
+	// inputs2d[0] = []float32{56.099998, 0.000001, -1.700004, 9.094196, -1.700002, 4.388192, -1.699986, 2.745589,
+	// 	-1.699995, 1.864812, -1.700000, 1.283777, -1.699999, 0.846498, -1.700004, 0.483691,
+	// 	-1.700001, 0.157525, -1.700001, -0.157525, -1.700004, -0.483691, -1.699999, -0.846498,
+	// 	-1.700000, -1.283777, -1.699995, -1.864812, -1.699986, -2.745589, -1.700002, -4.388192,
+	// 	-1.700004, -9.094196,
+	// 	-28.900002, 0.000000, 0.000001, -0.000000, 0.000001, 0.000006, -0.000006, 0.000001,
+	// 	-0.000002, 0.000000, -0.000000, 0.000002, -0.000001, 0.000001, 0.000002, 0.000000,
+	// 	0.000000, 0.000000, 0.000000, 0.000000, 0.000002, 0.000000, -0.000001, -0.000001,
+	// 	-0.000000, -0.000002, -0.000002, 0.000000, -0.000006, -0.000001, 0.000001, -0.000006,
+	// 	0.000001, 0.000000}
 
 	// panic("\n this is the input \n")
 
 	fmt.Println("\n Done. Transferring input data from CPU to GPU...")
 	cpuArray2d := data.SliceFromArray(inputs2d, size2d)
 	gpu2dBuffer := opencl.Buffer(NComponents, size2d)
-	gpu2destBuf := opencl.Buffer(NComponents, [3]int{136, 1, 1})
+	gpu2destBuf := opencl.Buffer(NComponents, [3]int{2 + fft_length, 1, 1})
 	// //outBuffer := opencl.Buffer(NComponents, [3]int{2 * N, 1, 1})
 
 	data.Copy(gpu2dBuffer, cpuArray2d)
 
 	fmt.Println("Waiting for data transfer to complete...")
-	// queue.Finish()
+	queue.Finish()
 	fmt.Println("Input data transfer completed.")
 
 	// PrintArray(cpuArray2d, 17)
@@ -180,9 +204,42 @@ func main() {
 	dstpt := gpu2destBuf.DevPtr(0)
 	dstmemobj := (*cl.MemObject)(dstpt)
 
-	effort.ExecTransform(dstmemobj, srcmemobj)
+	effort, _ := cl.CreateDefaultOclFFTPlan()
+	effort.SetDevice(d)
+	effort.SetContext(opencl.ClCtx)
+	// effort.SetQueue(queue)
+	effort.SetProgram()
+	// fmt.Printf("\n \n %v ", effort.GetDevice())
+	effort.SetQueue(queue)
+	effort.SetLayout(cl.CLFFTLayoutReal)
+	// effort.SetLayout(cl.CLFFTLayoutHermitianInterleaved)
+	// effort.SetLayout(cl.CLFFTLayoutComplexInterleaved)
+	effort.SetDirection(cl.ClFFTDirectionForward)
+	// effort.SetDirection(cl.ClFFTDirectionBackward)
+	effort.SetPrecision(cl.CLFFTPrecisionSingle)
 
-	PrintArray(gpu2destBuf, 68)
+	// effort.SetLengths([3]int{17, 2, 2})
+	effort.SetLengths([3]int{17, 1, 1})
+	effort.SetInStride([3]int{1, 0, 0})
+	effort.SetOutStride([3]int{1, 0, 0})
+
+	effort.SetSource(srcmemobj)
+	effort.SetDest(dstmemobj)
+
+	fmt.Printf("\n Printing array \n")
+	fmt.Printf("%v \n", effort.GetLengths())
+
+	effort.Bake()
+
+	err := effort.ExecTransform(dstmemobj, srcmemobj)
+
+	if err != nil {
+		fmt.Printf("\n This is not working as intended %v ", err)
+	}
+
+	// effort.ExecTransform(dstmemobj, srcmemobj)
+
+	PrintArray(gpu2destBuf, fft_length)
 
 	effort.Destroy()
 
