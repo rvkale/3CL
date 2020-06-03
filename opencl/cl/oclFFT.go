@@ -839,7 +839,56 @@ func (p *OclFFTPlan) hermitian2Full(dst, src *MemObject, sz, count int) {
 		fmt.Printf("WaitForEvents failed in hermitian2full: %+v \n", err)
 	}
 
-	p.GetQueue().Finish()
+	// p.GetQueue().Finish()
+	// queue.Release()
+}
+
+//Hermit2Full Wrapper for hermitian2full OpenCL kernel, asynchronous.
+func (p *OclFFTPlan) Hermit2Full(dst, src *MemObject, sz, count int) {
+	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
+	// if errc != nil {
+	// 	panic(" \n No device found error. Fix it ")
+	// }
+	var cfg = &config{Grid: []int{8, 1, 1}, Block: []int{1, 1, 1}}
+	var tmpEventList, tmpEventList1 []*Event
+
+	//ClPrefWGSz, err := pl.GetKernel("hermitian2full").PreferredWorkGroupSizeMultiple(pl.GetDevice())
+
+	if p.GetKernel("hermitian2full") == nil {
+		log.Panic("Kernel " + "hermitian2full" + " does not exist!")
+	}
+
+	if err := p.GetKernel("hermitian2full").SetArg(0, dst); err != nil {
+		log.Fatal(err)
+	}
+	if err := p.GetKernel("hermitian2full").SetArg(1, src); err != nil {
+		log.Fatal(err)
+	}
+	if err := p.GetKernel("hermitian2full").SetArg(2, (int32)(sz)); err != nil {
+		log.Fatal(err)
+	}
+	if err := p.GetKernel("hermitian2full").SetArg(3, (int32)(count)); err != nil {
+		log.Fatal(err)
+	}
+	if err := p.GetKernel("hermitian2full").SetArgUnsafe(4, cfg.Block[0]*cfg.Block[1]*cfg.Block[2]*4, nil); err != nil {
+		log.Fatal(err)
+	}
+	if err := p.GetKernel("hermitian2full").SetArgUnsafe(5, cfg.Block[0]*cfg.Block[1]*cfg.Block[2]*4, nil); err != nil {
+		log.Fatal(err)
+	}
+
+	// KernEvent, err := queue.EnqueueNDRangeKernel(p.GetKernel("hermitian2full"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	KernEvent, err := p.GetQueue().EnqueueNDRangeKernel(p.GetKernel("hermitian2full"), nil, cfg.Grid, cfg.Block, tmpEventList)
+	if err != nil {
+		log.Fatal(err)
+	}
+	tmpEventList1 = append(tmpEventList1, KernEvent)
+
+	if err := WaitForEvents(tmpEventList1); err != nil {
+		fmt.Printf("WaitForEvents failed in hermitian2full: %+v \n", err)
+	}
+
+	// p.GetQueue().Finish()
 	// queue.Release()
 }
 
@@ -893,7 +942,7 @@ func (p *OclFFTPlan) partAProcess(dst, src *MemObject, originalLeng, extendedLen
 		fmt.Printf("WaitForEvents failed in partAProcess: %+v \n", err)
 	}
 
-	p.GetQueue().Finish()
+	// p.GetQueue().Finish()
 	// queue.Release()
 }
 
@@ -944,7 +993,7 @@ func (p *OclFFTPlan) partBTwidFac(dst *MemObject, originalLeng, extendedLeng, ff
 		fmt.Printf("WaitForEvents failed in PartBTwidFact: %+v \n", err)
 	}
 
-	p.GetQueue().Finish()
+	// p.GetQueue().Finish()
 	// queue.Release()
 }
 
@@ -991,7 +1040,7 @@ func (p *OclFFTPlan) finalMulTwid(dst *MemObject, originalLeng, extendedLeng, ff
 		fmt.Printf("WaitForEvents failed in FinalMulTwid: %+v \n", err)
 	}
 
-	p.GetQueue().Finish()
+	// p.GetQueue().Finish()
 	// queue.Release()
 }
 
@@ -1044,7 +1093,7 @@ func (p *OclFFTPlan) complexMatrixTranspose(dst, src *MemObject, offset, width, 
 		fmt.Printf("WaitForEvents failed in complexmatrixtranspose: %+v \n", err)
 	}
 
-	p.GetQueue().Finish()
+	// p.GetQueue().Finish()
 	// queue.Release()
 }
 
@@ -1085,7 +1134,7 @@ func (p *OclFFTPlan) compressCmplxtoReal(dst, src *MemObject, cnt, iOff, oOff in
 		fmt.Printf("WaitForEvents failed in packcmplxarray: %+v \n", err)
 	}
 
-	p.GetQueue().Finish()
+	// p.GetQueue().Finish()
 	// queue.Release()
 }
 
@@ -1135,7 +1184,7 @@ func (p *OclFFTPlan) complexArrayMul(dst, a, b *MemObject, conjB, cnt, offset in
 		fmt.Printf("WaitForEvents failed in complexarraymul: %+v \n", err)
 	}
 
-	p.GetQueue().Finish()
+	// p.GetQueue().Finish()
 	// queue.Release()
 }
 
@@ -1156,7 +1205,7 @@ func (p *OclFFTPlan) memInputCpyFloat32(dst, src *MemObject, offsetDst, offsetSr
 		panic("\n Stopping execution \n")
 		//return nil
 	}
-	p.GetQueue().Finish()
+	// p.GetQueue().Finish()
 	// queue.Release()
 }
 
@@ -1353,7 +1402,7 @@ func (p *OclFFTPlan) Clfft2D(OutBuf, InBuf *MemObject, N0 int, N1 int, IsReal, I
 	//return InputData
 }
 
-//Clfft1D to caluclate 3d fft directly
+//Clfft1D to caluclate 1d fft directly
 func (p *OclFFTPlan) Clfft1D(OutBuf, InBuf *MemObject, N, ScaleLength int, IsReal, IsForw, IsSinglePrecision, IsScalingReq bool, context *Context) {
 
 	// var context *Context
@@ -1552,7 +1601,12 @@ func (p *OclFFTPlan) parse1D(FinalBuf, InpBuf *MemObject) {
 	//OutputBuf := opencl.Buffer(int(*Flag_comp), [3]int{2 * inp1d.RowDim, 1, 1})
 	//defer opencl.Recycle(OutputBuf)
 
-	p.fFT1D(FinalBuf, InpBuf, inp1d, p.clCtx)
+	if inp1d.IsBlusteinsReq == true {
+		p.makeFinalBuf()
+		p.fFT1D(FinalBuf, InpBuf, inp1d, p.clCtx)
+	} else {
+		p.fFT1D(FinalBuf, InpBuf, inp1d, p.clCtx)
+	}
 
 	// fmt.Print("\n Finished calculating 1D FFT. Output will be \n")
 
@@ -2081,7 +2135,9 @@ func (p *OclFFTPlan) fFT1D(FinalBuf, InpBuf *MemObject, class interface{}, conte
 				defer PartABuf.Release()
 
 				fmt.Printf("\n Converting Hermitian to Full Complex of Part A to complex for multiplication with twiddle factor\n")
-				p.hermitian2Full(PartABuf, InpBuf, c.FinalN/2, c.RowDim/2)
+				fmt.Printf("\n \n The sz variable is %d \n", c.FinalN/2)
+				fmt.Printf("\n \n The cnt variable is %d \n", c.RowDim/2)
+				p.hermitian2Full(PartABuf, InpBuf, c.FinalN/2, 1+c.RowDim/2)
 				fmt.Println("\n Waiting for kernel to finish execution...")
 				p.GetQueue().Finish()
 
@@ -2105,10 +2161,12 @@ func (p *OclFFTPlan) fFT1D(FinalBuf, InpBuf *MemObject, class interface{}, conte
 				PartAFFT, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartAFFT.Release()
 				p.Clfft1D(PartAFFT, PartAProcBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, p.GetContext())
+
 				fmt.Printf("\n Executing forward FFT for Part B \n")
 				PartBFFT, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer PartBFFT.Release()
 				p.Clfft1D(PartBFFT, PartBBuf, c.FinalN, c.FinalN, false, true, c.IsSinglePreci, false, p.GetContext())
+
 				fmt.Printf("\n Multiplying Part A and Part B FFT \n")
 				MulBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.FinalN)
 				defer MulBuff.Release()
