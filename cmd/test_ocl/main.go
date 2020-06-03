@@ -34,7 +34,7 @@ const maxLen int = 128000000
 //PrintArray Prints the input array for debugging
 func PrintArray(InpArr *data.Slice, ArrLength int) {
 	// queue := opencl.ClCmdQueue
-	outArray := data.NewSlice(1, [3]int{2 + ArrLength, 1, 1})
+	outArray := data.NewSlice(1, [3]int{1 + ArrLength, 1, 1})
 	data.Copy(outArray, InpArr)
 	fmt.Printf("\n Printing the requested array \n")
 	// queue.Finish()
@@ -45,7 +45,8 @@ func PrintArray(InpArr *data.Slice, ArrLength int) {
 	for k := 0; k < 1; k++ {
 		// results[i] = make([]float32, 2*5*2)
 		for j := 0; j < int(ArrLength); j++ {
-			fmt.Printf(" ( %f , %f ) ", result2[k][2*j], result2[k][2*j+1])
+			// fmt.Printf(" ( %f , %f ) ", result2[k][2*j], result2[k][2*j+1])
+			fmt.Printf(" ( %f ) ", result2[k][j])
 		}
 	}
 }
@@ -106,33 +107,26 @@ func main() {
 	var size2d [3]int
 
 	// size2d = [3]int{2 * fft_length, 1, 1}
-	size2d = [3]int{fft_length, 1, 1}
-	for i := 0; i < NComponents; i++ {
-		inputs2d[i] = make([]float32, size2d[0])
-		for j := 0; j < 1; j++ {
-			for k := 0; k < fft_length; k++ {
-				inputs2d[i][k] = float32(k)
-				// inputs2d[i][j+2*k] = float32(k) //* float32(0.1) //float32(0.1)
-				// inputs2d[i][j+2*k+1] = float32(0)
 
-				// fmt.Printf("( %f , %f  ) ", inputs2d[i][j+2*k], inputs2d[i][j+2*k+1])
-				fmt.Printf("( %f ) ", inputs2d[i][k])
-			}
-			fmt.Printf("\n")
-		}
-	}
-
-	// size2d = [3]int{34, 1, 1}
+	// size2d = [3]int{13, 1, 1}
 	// for i := 0; i < NComponents; i++ {
 	// 	inputs2d[i] = make([]float32, size2d[0])
-	// 	for j := 0; j < 2; j++ {
-	// 		for k := 0; k < 17; k++ {
-	// 			inputs2d[i][j*17+k] = float32(j*17+k) * float32(0.1) //float32(0.1)
-	// 			fmt.Printf("( %f ) ", inputs2d[i][j*17+k])
+	// 	for j := 0; j < 1; j++ {
+	// 		for k := 0; k < 13; k++ {
+	// 			inputs2d[i][j*13+k] = float32(j*13 + k) //* float32(0.1) //float32(0.1)
+	// 			fmt.Printf("( %f ) ", inputs2d[i][j*13+k])
 	// 		}
 	// 		fmt.Printf("\n")
 	// 	}
 	// }
+
+	size2d = [3]int{18, 1, 1}
+	inputs2d[0] = []float32{136.000000, 0.000000, -8.500000, 45.4709838, -8.500000, 21.94102921,
+		-8.500000, 13.72797136, -8.500000, 9.32405583, -8.500000, 6.41890204, -8.500000, 4.23249709,
+		-8.500000, 2.41845851, -8.500000, 0.78764099} //,
+	// -8.500000, -0.78764099, -8.500000, -2.41845851, -8.500000, -4.23249709,
+	// -8.500000, -6.41890204, -8.500000, -9.32405583, -8.500000, -13.72797136,
+	// -8.500000, -21.94102921, -8.500000, -45.4709838}
 
 	// size2d = [3]int{34, 1, 1}
 	// for i := 0; i < NComponents; i++ {
@@ -163,6 +157,8 @@ func main() {
 	// 		//fmt.Printf("\n")
 	// 	}
 	// }
+
+	// size2d = [3]int{36, 1, 1}
 	// inputs2d[0] = []float32{56.099998, 0.000001, -1.700004, 9.094196, -1.700002, 4.388192, -1.699986, 2.745589,
 	// 	-1.699995, 1.864812, -1.700000, 1.283777, -1.699999, 0.846498, -1.700004, 0.483691,
 	// 	-1.700001, 0.157525,
@@ -186,7 +182,7 @@ func main() {
 	fmt.Println("\n Done. Transferring input data from CPU to GPU...")
 	cpuArray2d := data.SliceFromArray(inputs2d, size2d)
 	gpu2dBuffer := opencl.Buffer(NComponents, size2d)
-	gpu2destBuf := opencl.Buffer(NComponents, [3]int{2 + fft_length, 1, 1})
+	gpu2destBuf := opencl.Buffer(NComponents, [3]int{1 + fft_length, 1, 1})
 	// //outBuffer := opencl.Buffer(NComponents, [3]int{2 * N, 1, 1})
 
 	data.Copy(gpu2dBuffer, cpuArray2d)
@@ -211,11 +207,11 @@ func main() {
 	effort.SetProgram()
 	// fmt.Printf("\n \n %v ", effort.GetDevice())
 	effort.SetQueue(queue)
-	effort.SetLayout(cl.CLFFTLayoutReal)
-	// effort.SetLayout(cl.CLFFTLayoutHermitianInterleaved)
+	// effort.SetLayout(cl.CLFFTLayoutReal)
+	effort.SetLayout(cl.CLFFTLayoutHermitianInterleaved)
 	// effort.SetLayout(cl.CLFFTLayoutComplexInterleaved)
-	effort.SetDirection(cl.ClFFTDirectionForward)
-	// effort.SetDirection(cl.ClFFTDirectionBackward)
+	// effort.SetDirection(cl.ClFFTDirectionForward)
+	effort.SetDirection(cl.ClFFTDirectionBackward)
 	effort.SetPrecision(cl.CLFFTPrecisionSingle)
 
 	// effort.SetLengths([3]int{17, 2, 2})
@@ -232,6 +228,8 @@ func main() {
 	effort.Bake()
 
 	err := effort.ExecTransform(dstmemobj, srcmemobj)
+
+	// effort.Hermit2Full(dstmemobj, srcmemobj, 17, 9)
 
 	if err != nil {
 		fmt.Printf("\n This is not working as intended %v ", err)
