@@ -843,55 +843,6 @@ func (p *OclFFTPlan) hermitian2Full(dst, src *MemObject, sz, count int) {
 	// queue.Release()
 }
 
-//Hermit2Full Wrapper for hermitian2full OpenCL kernel, asynchronous.
-func (p *OclFFTPlan) Hermit2Full(dst, src *MemObject, sz, count int) {
-	// queue, errc := p.clCtx.CreateCommandQueue(p.clDevice, 0)
-	// if errc != nil {
-	// 	panic(" \n No device found error. Fix it ")
-	// }
-	var cfg = &config{Grid: []int{8, 1, 1}, Block: []int{1, 1, 1}}
-	var tmpEventList, tmpEventList1 []*Event
-
-	//ClPrefWGSz, err := pl.GetKernel("hermitian2full").PreferredWorkGroupSizeMultiple(pl.GetDevice())
-
-	if p.GetKernel("hermitian2full") == nil {
-		log.Panic("Kernel " + "hermitian2full" + " does not exist!")
-	}
-
-	if err := p.GetKernel("hermitian2full").SetArg(0, dst); err != nil {
-		log.Fatal(err)
-	}
-	if err := p.GetKernel("hermitian2full").SetArg(1, src); err != nil {
-		log.Fatal(err)
-	}
-	if err := p.GetKernel("hermitian2full").SetArg(2, (int32)(sz)); err != nil {
-		log.Fatal(err)
-	}
-	if err := p.GetKernel("hermitian2full").SetArg(3, (int32)(count)); err != nil {
-		log.Fatal(err)
-	}
-	if err := p.GetKernel("hermitian2full").SetArgUnsafe(4, cfg.Block[0]*cfg.Block[1]*cfg.Block[2]*4, nil); err != nil {
-		log.Fatal(err)
-	}
-	if err := p.GetKernel("hermitian2full").SetArgUnsafe(5, cfg.Block[0]*cfg.Block[1]*cfg.Block[2]*4, nil); err != nil {
-		log.Fatal(err)
-	}
-
-	// KernEvent, err := queue.EnqueueNDRangeKernel(p.GetKernel("hermitian2full"), nil, cfg.Grid, cfg.Block, tmpEventList)
-	KernEvent, err := p.GetQueue().EnqueueNDRangeKernel(p.GetKernel("hermitian2full"), nil, cfg.Grid, cfg.Block, tmpEventList)
-	if err != nil {
-		log.Fatal(err)
-	}
-	tmpEventList1 = append(tmpEventList1, KernEvent)
-
-	if err := WaitForEvents(tmpEventList1); err != nil {
-		fmt.Printf("WaitForEvents failed in hermitian2full: %+v \n", err)
-	}
-
-	// p.GetQueue().Finish()
-	// queue.Release()
-}
-
 //partAProcess To preprocess the input data and extend it
 func (p *OclFFTPlan) partAProcess(dst, src *MemObject, originalLeng, extendedLeng, fftDirection, offset int) {
 	//util.Argument(dst.NComp() == src.NComp())
@@ -2469,7 +2420,7 @@ func (p *OclFFTPlan) parse3D(FinalBuf, InpBuf *MemObject) {
 				//opencl.Recycle(FinalTempBuf)
 				// }
 			} else {
-				fmt.Printf("\n Executing Blusteins and Forw and Real")
+				fmt.Printf("\n Executing Blusteins and Forw and Complex")
 				// for i := 0; i < int(*Flag_comp); i++ {
 				TempOutBuf, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim*c.DepthDim)
 				TranpoBuf, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim*c.DepthDim)
@@ -2553,6 +2504,7 @@ func (p *OclFFTPlan) parse3D(FinalBuf, InpBuf *MemObject) {
 					FftBuff, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim)
 					p.packComplexArray(FftBuff, TempFftBuff, c.RowDim, 0, 0)
 					p.memInputCpyFloat32(TempOutBuf, FftBuff, 2*j*c.RowDim, 0, 2*c.RowDim)
+					fmt.Printf("\n --------------- Coming here during this testing ----------------------\n")
 					SmallBuff.Release()
 					FftBuff.Release()
 					TempFftBuff.Release()
@@ -2658,7 +2610,7 @@ func (p *OclFFTPlan) parse3D(FinalBuf, InpBuf *MemObject) {
 				}
 				fmt.Printf("\n Implementing Transpose \n")
 				p.complexMatrixTranspose(SecTrnBuf, SecOutBuf, 0, c.ColDim, c.RowDim*c.DepthDim)
-				fmt.Printf("\n Printing 2d individual output array \n")
+				// fmt.Printf("\n Printing 2d individual output array \n")
 
 				TerOutBuf, _ := p.GetContext().CreateEmptyBufferFloat32(MemReadWrite, 2*c.RowDim*c.ColDim*c.DepthDim)
 
@@ -2676,7 +2628,7 @@ func (p *OclFFTPlan) parse3D(FinalBuf, InpBuf *MemObject) {
 				}
 				fmt.Printf("\n Implementing Transpose \n")
 				p.complexMatrixTranspose(FinalBuf, TerOutBuf, 0, c.DepthDim, c.RowDim*c.ColDim)
-				fmt.Printf("\n Printing 2d individual output array \n")
+				// fmt.Printf("\n Printing 2d individual output array \n")
 
 				//PrintArray(FinalBuf, c.RowDim*c.ColDim)
 				TempOutBuf.Release()
