@@ -34,7 +34,7 @@ const maxLen int = 128000000
 //PrintArray Prints the input array for debugging
 func PrintArray(InpArr *data.Slice, ArrLength int) {
 	// queue := opencl.ClCmdQueue
-	outArray := data.NewSlice(1, [3]int{1 + ArrLength, 1, 1})
+	outArray := data.NewSlice(1, [3]int{ArrLength, 1, 1})
 	data.Copy(outArray, InpArr)
 	fmt.Printf("\n Printing the requested array \n")
 	// queue.Finish()
@@ -54,7 +54,7 @@ func PrintArray(InpArr *data.Slice, ArrLength int) {
 func main() {
 
 	var fft_length int
-	fft_length = 17
+	fft_length = 68
 
 	flag.Parse()
 	//var Desci int //Descision variable
@@ -120,10 +120,62 @@ func main() {
 	// 	}
 	// }
 
-	size2d = [3]int{18, 1, 1}
-	inputs2d[0] = []float32{136.000000, 0.000000, -8.500000, 45.4709838, -8.500000, 21.94102921,
-		-8.500000, 13.72797136, -8.500000, 9.32405583, -8.500000, 6.41890204, -8.500000, 4.23249709,
-		-8.500000, 2.41845851, -8.500000, 0.78764099} //,
+	// size2d = [3]int{136, 1, 1}
+	// inputs2d[0] = []float32{0.000000, 0.000000, 1.000000, 0.000000, 2.000000, 0.000000,
+	// 	3.000000, 0.000000, 4.000000, 0.000000, 5.000000, 0.000000, 6.000000, 0.000000,
+	// 	7.000000, 0.000000, 8.000000, 0.000000,
+	// 	9.000000, 0.000000, 10.000000, 0.000000, 11.000000, 0.000000,
+	// 	12.000000, 0.000000, 13.000000, 0.000000, 14.000000, 0.000000,
+	// 	15.000000, 0.000000, 16.000000, 0.000000,
+	// 	17.000000, 0.000000, 18.000000, 0.000000, 19.000000, 0.000000,
+	// 	20.000000, 0.000000, 21.000000, 0.000000, 22.000000, 0.000000, 23.000000, 0.000000,
+	// 	24.000000, 0.000000, 25.000000, 0.000000,
+	// 	26.000000, 0.000000, 27.000000, 0.000000, 28.000000, 0.000000,
+	// 	29.000000, 0.000000, 30.000000, 0.000000, 31.000000, 0.000000,
+	// 	32.000000, 0.000000, 33.000000, 0.000000,
+	// 	34.000000, 0.000000, 35.000000, 0.000000, 36.000000, 0.000000,
+	// 	37.000000, 0.000000, 38.000000, 0.000000, 39.000000, 0.000000, 40.000000, 0.000000,
+	// 	41.000000, 0.000000, 42.000000, 0.000000,
+	// 	43.000000, 0.000000, 44.000000, 0.000000, 45.000000, 0.000000,
+	// 	46.000000, 0.000000, 47.000000, 0.000000, 48.000000, 0.000000,
+	// 	49.000000, 0.000000, 50.000000, 0.000000,
+	// 	51.000000, 0.000000, 52.000000, 0.000000, 53.000000, 0.000000,
+	// 	54.000000, 0.000000, 55.000000, 0.000000, 56.000000, 0.000000, 57.000000, 0.000000,
+	// 	58.000000, 0.000000, 59.000000, 0.000000,
+	// 	60.000000, 0.000000, 61.000000, 0.000000, 62.000000, 0.000000,
+	// 	63.000000, 0.000000, 64.000000, 0.000000, 65.000000, 0.000000,
+	// 	66.000000, 0.000000, 67.000000, 0.000000}
+
+	size2d = [3]int{68, 1, 1}
+	inputs2d[0] = []float32{0.000000, 1.000000, 2.000000,
+		3.000000, 4.000000, 5.000000, 6.000000,
+		7.000000, 8.000000,
+		9.000000, 10.000000, 11.000000,
+		12.000000, 13.000000, 14.000000,
+		15.000000, 16.000000,
+		17.000000, 18.000000, 19.000000,
+		20.000000, 21.000000, 22.000000, 23.000000,
+		24.000000, 25.000000,
+		26.000000, 27.000000, 28.000000,
+		29.000000, 30.000000, 31.000000,
+		32.000000, 33.000000,
+		34.000000, 35.000000, 36.000000,
+		37.000000, 38.000000, 39.000000, 40.000000,
+		41.000000, 42.000000,
+		43.000000, 44.000000, 45.000000,
+		46.000000, 47.000000, 48.000000,
+		49.000000, 50.000000,
+		51.000000, 52.000000, 53.000000,
+		54.000000, 55.000000, 56.000000, 57.000000,
+		58.000000, 59.000000,
+		60.000000, 61.000000, 62.000000,
+		63.000000, 64.000000, 65.000000,
+		66.000000, 67.000000}
+
+	// size2d = [3]int{18, 1, 1}
+	// inputs2d[0] = []float32{136.000000, 0.000000, -8.500000, 45.4709838, -8.500000, 21.94102921,
+	// 	-8.500000, 13.72797136, -8.500000, 9.32405583, -8.500000, 6.41890204, -8.500000, 4.23249709,
+	// 	-8.500000, 2.41845851, -8.500000, 0.78764099} //,
 	// -8.500000, -0.78764099, -8.500000, -2.41845851, -8.500000, -4.23249709,
 	// -8.500000, -6.41890204, -8.500000, -9.32405583, -8.500000, -13.72797136,
 	// -8.500000, -21.94102921, -8.500000, -45.4709838}
@@ -182,7 +234,8 @@ func main() {
 	fmt.Println("\n Done. Transferring input data from CPU to GPU...")
 	cpuArray2d := data.SliceFromArray(inputs2d, size2d)
 	gpu2dBuffer := opencl.Buffer(NComponents, size2d)
-	gpu2destBuf := opencl.Buffer(NComponents, [3]int{1 + fft_length, 1, 1})
+	gpu2destBuf := opencl.Buffer(NComponents, [3]int{70, 1, 1})
+	gpu3newBuf := opencl.Buffer(NComponents, size2d)
 	// //outBuffer := opencl.Buffer(NComponents, [3]int{2 * N, 1, 1})
 
 	data.Copy(gpu2dBuffer, cpuArray2d)
@@ -200,6 +253,9 @@ func main() {
 	dstpt := gpu2destBuf.DevPtr(0)
 	dstmemobj := (*cl.MemObject)(dstpt)
 
+	thirdest := gpu3newBuf.DevPtr(0)
+	thirdestobj := (*cl.MemObject)(thirdest)
+
 	effort, _ := cl.CreateDefaultOclFFTPlan()
 	effort.SetDevice(d)
 	effort.SetContext(opencl.ClCtx)
@@ -207,15 +263,15 @@ func main() {
 	effort.SetProgram()
 	// fmt.Printf("\n \n %v ", effort.GetDevice())
 	effort.SetQueue(queue)
-	// effort.SetLayout(cl.CLFFTLayoutReal)
-	effort.SetLayout(cl.CLFFTLayoutHermitianInterleaved)
+	effort.SetLayout(cl.CLFFTLayoutReal)
+	// effort.SetLayout(cl.CLFFTLayoutHermitianInterleaved)
 	// effort.SetLayout(cl.CLFFTLayoutComplexInterleaved)
-	// effort.SetDirection(cl.ClFFTDirectionForward)
-	effort.SetDirection(cl.ClFFTDirectionBackward)
+	effort.SetDirection(cl.ClFFTDirectionForward)
+	// effort.SetDirection(cl.ClFFTDirectionBackward)
 	effort.SetPrecision(cl.CLFFTPrecisionSingle)
 
 	// effort.SetLengths([3]int{17, 2, 2})
-	effort.SetLengths([3]int{17, 1, 1})
+	effort.SetLengths([3]int{4, 17, 1})
 	effort.SetInStride([3]int{1, 0, 0})
 	effort.SetOutStride([3]int{1, 0, 0})
 
@@ -235,11 +291,32 @@ func main() {
 		fmt.Printf("\n This is not working as intended %v ", err)
 	}
 
+	PrintArray(gpu2destBuf, 2+fft_length)
+
+	// effort.Destroy()
+
+	fmt.Printf("\n \n \n \n \n \n \n Executed the forward FFT Correctly \n \n \n \n \n \n \n ")
+
+	// effort.SetLayout(cl.CLFFTLayoutReal)
+	effort.SetLayout(cl.CLFFTLayoutHermitianInterleaved)
+	// effort.SetLayout(cl.CLFFTLayoutComplexInterleaved)
+	// effort.SetDirection(cl.ClFFTDirectionForward)
+	effort.SetDirection(cl.ClFFTDirectionBackward)
+	effort.SetPrecision(cl.CLFFTPrecisionSingle)
+	effort.SetInStride([3]int{1, 0, 0})
+	effort.SetOutStride([3]int{1, 0, 0})
+	effort.SetSource(dstmemobj)
+	effort.SetDest(thirdestobj)
+	effort.Bake()
 	// effort.ExecTransform(dstmemobj, srcmemobj)
+	err = effort.ExecTransform(thirdestobj, dstmemobj)
 
-	PrintArray(gpu2destBuf, fft_length)
+	// effort.Hermit2Full(dstmemobj, srcmemobj, 17, 9)
 
-	effort.Destroy()
+	if err != nil {
+		fmt.Printf("\n This is not working as intended %v ", err)
+	}
+	PrintArray(gpu3newBuf, fft_length)
 
 	// Parse2D(gpu2dBuffer, plan2d)
 
