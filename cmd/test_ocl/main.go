@@ -234,8 +234,9 @@ func main() {
 	fmt.Println("\n Done. Transferring input data from CPU to GPU...")
 	cpuArray2d := data.SliceFromArray(inputs2d, size2d)
 	gpu2dBuffer := opencl.Buffer(NComponents, size2d)
-	gpu2destBuf := opencl.Buffer(NComponents, [3]int{70, 1, 1})
+	gpu2destBuf := opencl.Buffer(NComponents, [3]int{136, 1, 1})
 	gpu3newBuf := opencl.Buffer(NComponents, size2d)
+	// gpu3newBuf := opencl.Buffer(NComponents, [3]int{136, 1, 1})
 	// //outBuffer := opencl.Buffer(NComponents, [3]int{2 * N, 1, 1})
 
 	data.Copy(gpu2dBuffer, cpuArray2d)
@@ -271,7 +272,7 @@ func main() {
 	effort.SetPrecision(cl.CLFFTPrecisionSingle)
 
 	// effort.SetLengths([3]int{17, 2, 2})
-	effort.SetLengths([3]int{4, 17, 1})
+	effort.SetLengths([3]int{2, 2, 17})
 	effort.SetInStride([3]int{1, 0, 0})
 	effort.SetOutStride([3]int{1, 0, 0})
 
@@ -291,7 +292,7 @@ func main() {
 		fmt.Printf("\n This is not working as intended %v ", err)
 	}
 
-	PrintArray(gpu2destBuf, 2+fft_length)
+	PrintArray(gpu2destBuf, 136)
 
 	// effort.Destroy()
 
@@ -314,9 +315,11 @@ func main() {
 	// effort.Hermit2Full(dstmemobj, srcmemobj, 17, 9)
 
 	if err != nil {
-		fmt.Printf("\n This is not working as intended %v ", err)
+		fmt.Printf("\n This is not working as intended %v %d ", err, fft_length)
 	}
-	PrintArray(gpu3newBuf, fft_length)
+	PrintArray(gpu3newBuf, 68)
+
+	effort.Destroy()
 
 	// Parse2D(gpu2dBuffer, plan2d)
 
